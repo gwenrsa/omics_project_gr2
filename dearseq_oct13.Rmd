@@ -39,14 +39,20 @@ Design data matrix
 ```{r designdatamatrix}
 antibody_df <- read_excel("YF_Antibodies_D0D28 Results.xlsx")
 names(antibody_df)[8] <- "daynum"
-names(antibody_df)[2] <- "patID"
-names(antibody_df)[10] <- "logPRNT50"
-antibody_df <- antibody_df %>% 
-  filter(daynum == 28) %>% 
-  select(c(patID, daynum, PRNT50, logPRNT50))
-antibody_df$antibodyHigh <- ifelse(antibody_df$PRNT50 > 550 , "High", "Low") #change this when we decide
-designmatrix <- data.frame(samplename = antibody_df$patID, antibodyHigh = antibody_df$antibodyHigh)
-samples <- antibody_df$patID
+antibodyValues <- antibody_df %>% 
+  select(c("Participant ID", daynum, "PRNT50")) %>% 
+  filter(daynum == c(0, 28)) %>% 
+  spread(key = daynum, value = "PRNT50") 
+names(antibodyValues)[2] = "Day0"
+names(antibodyValues)[3] = "Day28"
+antibodyValues = filter(antibodyValues, !is.na(Day28))
+antibodyValues$fold <- antibodyValues$Day28 / antibodyValues$Day0
+antibodyValues$antibodyHigh <- ifelse(antibodyValues$fold> 40, "High", "Low")
+antibodyValues <- select(antibodyValues, c("Participant ID", "fold", "antibodyHigh"))
+names(antibodyValues)[1] = "patID"
+
+designmatrix <- data.frame(samplename = antibodyValues$patID, antibodyHigh = antibodyValues$antibodyHigh)
+samples <- antibodyValues$patID
 ```
 
 Gene expression matrix
@@ -69,13 +75,6 @@ library(SummarizedExperiment)
 col_data <- data.frame(antibodyHigh = designmatrix$antibodyHigh)
 #col_data$antibodyHigh = relevel(col_data$antibodyHigh, ref = "Low")
 rownames(col_data) = designmatrix$samplename
-se <- SummarizedExperiment(assays = rawcounts_df, colData = col_data)
-res_dearseq <- dear_seq(object = se, variables2test = "antibodyHigh",
-                        which_test = "asymptotic", preprocessed = TRUE)
-summary(res_dearseq)
-plot(res_dearseq)
-
-
 se_raw <- SummarizedExperiment(assays = rawcounts_df, colData = col_data)
 
 group <- ifelse(se_raw$antibodyHigh == "High", 1, 0)
