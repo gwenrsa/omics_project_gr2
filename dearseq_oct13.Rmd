@@ -1,0 +1,96 @@
+---
+title: "Project Draft 1"
+author: "Madeleine"
+date: "2023-10-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###Install packages and import data
+```{r message=FALSE, warning=FALSE}
+setwd("~/Documents/OMICS/Project")
+
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("dearseq")
+
+
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("GEOquery")
+
+
+library(dplyr)
+library(dearseq)
+library(edgeR)
+library(flashClust)
+library(UpSetR)
+
+rawcounts_df <- read_excel("Raw-counts_transposed Results.xlsx")
+```
+
+
+Design data matrix
+```{r designdatamatrix}
+antibody_df <- read_excel("YF_Antibodies_D0D28 Results.xlsx")
+names(antibody_df)[8] <- "daynum"
+names(antibody_df)[2] <- "patID"
+names(antibody_df)[10] <- "logPRNT50"
+antibody_df <- antibody_df %>% 
+  filter(daynum == 28) %>% 
+  select(c(patID, daynum, PRNT50, logPRNT50))
+antibody_df$antibodyHigh <- ifelse(antibody_df$PRNT50 > 550 , "High", "Low") #change this when we decide
+designmatrix <- data.frame(samplename = antibody_df$patID, antibodyHigh = antibody_df$antibodyHigh)
+samples <- antibody_df$patID
+```
+
+Gene expression matrix
+```{r genexpressionmatrix}
+rawcounts_df <- read_excel("Raw-counts_transposed Results.xlsx")
+genes <- rawcounts_df$Genes
+rawcounts_df <- rawcounts_df[,-c(1:5)]
+
+rawcounts_df <- rawcounts_df %>% 
+  select(c("1-YF", "2-YF", "3-YF", "7-YF", "10-YF", "11-YF", "13-YF", "15-YF", "18-YF", "19-YF", "20-YF", "22-YF")) %>% 
+  as.matrix()
+rownames(rawcounts_df) <- genes
+colnames(rawcounts_df) <- samples
+```
+
+Identify differentially expressed genes
+```{r dearseq, message=FALSE, warning=FALSE}
+library(dearseq)
+library(SummarizedExperiment)
+col_data <- data.frame(antibodyHigh = designmatrix$antibodyHigh)
+#col_data$antibodyHigh = relevel(col_data$antibodyHigh, ref = "Low")
+rownames(col_data) = designmatrix$samplename
+se <- SummarizedExperiment(assays = rawcounts_df, colData = col_data)
+res_dearseq <- dear_seq(object = se, variables2test = "antibodyHigh",
+                        which_test = "asymptotic", preprocessed = TRUE)
+summary(res_dearseq)
+plot(res_dearseq)
+
+
+se_raw <- SummarizedExperiment(assays = rawcounts_df, colData = col_data)
+
+group <- ifelse(se_raw$antibodyHigh == "High", 1, 0)
+dgList <- DGEList(counts = rawcounts_df, group = group)
+cpm <- cpm(dgList)
+countCheck <- cpm > 2
+keep <- which(rowSums(countCheck) >= 5)
+rawcounts_df <- rawcounts_df[keep, ]
+
+res_dearseq <- dearseq::dear_seq(object = se_raw, variables2test = "antibodyHigh",
+    which_test = "permutation", preprocessed = FALSE, parallel_comp = interactive())
+
+summary(res_dearseq)
+plot(res_dearseq)
+```
+
+
+
