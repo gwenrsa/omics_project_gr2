@@ -1,0 +1,121 @@
+# Packages
+
+library(dplyr)
+library(edgeR)
+library(limma)
+library(UpSetR)
+library(flashClust)
+library(dendextend)
+
+raw_genes <- read.csv("DM_raw-counts_transposed.csv")
+metadata <- read_xlsx("metadata_complete_oct18.xlsx")
+
+# Clean Participant Data
+
+raw_genes <- raw_genes %>% 
+  select (-X13.YF, -X14.YF, -X15.YF, -X16.YF, -X17.YF, -X18.YF, -X19.YF, -X20.YF,
+          -X41.YF, -X42.YF, -X43.YF, -X44.YF)
+           
+new_col_names <- character(0)
+
+for (p in 1:18) {
+  for (d in c(0, 1, 3, 28)) {
+    new_col_names <- c(new_col_names, paste0("P", p, ".D", d))
+  }
+}
+
+colnames(raw_genes)[2:73] <- new_col_names
+
+# Remove genes that were not observed
+
+genes_no0 <- rowSums(dplyr::select(raw_genes, -dplyr::starts_with("Genes"))) > 0
+table(genes_no0)
+
+raw_genes_no0 <- dplyr::filter(raw_genes, genes_no0)
+dim(raw_genes_no0)
+
+# Calculate CPM
+
+mycpmfun <- function(x) {
+  return((x/sum(x)) * 10^6)
+}
+cpm <- apply(dplyr::select(raw_genes_no0, -starts_with("Genes")), MARGIN = 2,
+             FUN = mycpmfun)
+raw_genes_no0_cpm2p <- dplyr::filter(raw_genes_no0, rowSums(cpm > 2) >= 5)
+dim(raw_genes_no0_cpm2p)
+
+# Plots
+
+bp_col <- metadata$VisitID
+levels(bp_col) <- c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96")
+
+boxplot(log2(select(raw_genes_no0_cpm2p, -starts_with("Genes"))),
+        col = as.character(bp_col),
+        xlab = "Samples", ylab = "log2(raw counts)", axes = FALSE)
+axis(2)
+box()
+legend("topright", legend = levels(metadata$VisitID), 
+       col = c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96"), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
+barplot(colSums(select(raw_genes_no0_cpm2p, -starts_with("Genes"))),
+        col = as.character(bp_col), xlab = "Samples", ylab = "Library size", names.arg = "")
+axis(2)
+box()
+legend("topright", legend = levels(metadata$VisitID), 
+       col = c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96"), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
+# Compute TMM Normalization
+
+raw_count_DGE <- DGEList(counts = select(raw_genes_no0_cpm2p, -starts_with("Genes")),
+                        genes = select(raw_genes_no0_cpm2p,
+                                                                  starts_with("Genes")))
+raw_count_DGE_normfact <- edgeR::calcNormFactors(raw_count_DGE, method = "TMM")
+
+raw_count_DGE_normfact_TMMlog2cpm <- edgeR::cpm(raw_count_DGE_normfact, log = TRUE)
+
+boxplot(raw_count_DGE_normfact_TMMlog2cpm, xlab = "Samples", col = as.character(bp_col),
+        ylab = "Normalized log2 cpm", axes = FALSE)
+axis(2)
+box()
+legend("topright", legend = levels(metadata$VisitID), 
+       col = c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96"), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
+# Build Dendrogram
+
+deucl_raw <- dist(t(select(raw_genes_no0_cpm2p, -starts_with("Genes"))))
+deucl_norm <- dist(t(raw_count_DGE_normfact_TMMlog2cpm))
+
+dend_raw <- as.dendrogram(hclust(deucl_raw, method = "ward"))
+dend_norm <- as.dendrogram(hclust(deucl_norm, method = "ward"))
+
+assign_color <- function(label) {
+  if (grepl("D0", label)) {
+    return("#FF6F61")  # Red
+  } else if (grepl("D1", label)) {
+    return("#AEC6CF")  # Blue
+  } else if (grepl("D3", label)) {
+    return("#B2D8B2")  # Green
+  } else if (grepl("D28", label)) {
+    return("#FDFD96")  # Yellow
+  } else {
+    return("#000000")  # Default color (black)
+  }
+}
+
+label_colors <- sapply(labels(dend), assign_color)
+labels_colors(dend_raw) <- label_colors
+labels_colors(dend_norm) <- label_colors
+
+plot(dend_raw)
+legend("topright", legend = levels(metadata$VisitID), 
+       col = c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96"), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
+plot(dend_norm)
+legend("topright", legend = levels(metadata$VisitID), 
+       col = c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96"), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
