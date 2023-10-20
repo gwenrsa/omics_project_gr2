@@ -105,6 +105,8 @@ Gene expression matrix
 rawcounts_df <- read_excel("Raw-counts_transposed Results.xlsx")
 genes <- rawcounts_df$Genes
 rawcounts_df <- rawcounts_df[,-c(1:5)]
+rownames(rawcounts_df) <- genes
+
 ```
 
 ```{r savedata}
