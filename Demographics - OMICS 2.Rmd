@@ -1,0 +1,91 @@
+---
+title: "Demographics - OMICS2"
+author: "Francesca"
+date: "2023-10-13"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Data Loading
+```{r setup, include=FALSE}
+library(table1)
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(epiR)
+library(ggplot2)
+
+
+# load demographic data 
+
+demo<- read_csv("OMICS Practical/DM_YF_Demographics_withoutDateBirth.csv")
+head(demo) # to visualize the data - here the only variable relevant to us is Age
+
+demo_clean <- demo %>%
+  filter(!is.na(Age)) %>% #remove patient with missing
+  filter(Sex =="1") #remove all those who are not female (3 obs)
+View(demo_clean) #we now have 18 obs (matches our expectations)
+
+# load cytokineCD4 data 
+CD4 <- read.csv("OMICS Practical/ICS_TotalCytokineCD4.csv")
+head(CD4)
+
+CD4_clean <- CD4 %>%
+  filter(VisitID =="0") #isolate to baseline visits only
+View(CD4_clean) #here we have 18 obs for visit 0 - PIDs match those in demo_clean
+
+#load antibodies data 
+antibodies <- read_xlsx("OMICS Practical/DM_YF_Antibodies_D0D28.xlsx") # we want the logPRNT50 at day 0 for our study participants 
+
+antibodies_clean <- antibodies %>%
+  filter(day_abs_num == "0", day_abs_num2 =="0") #isolate for obs at visit 0 
+View(antibodies_clean)
+
+#merge to one dataframe
+
+# Using merge with same column names
+list_df = list(demo_clean, CD4_clean, antibodies_clean)
+demo_merged <- list_df %>% reduce(inner_join, by='ParticipantID')
+View(demo_merged)
+
+summary(demo_merged)
+
+demo_merged %>%
+  summarise(
+    count = n(),
+    median_age = median(Age),
+    median_CD4 = median(TotalCytokine_CD4),
+    median_PRNT = median(PRNT50),
+  )
+#get descriptive stats for Age variable 
+demo_merged$Age <- as.numeric(demo_merged$Age)
+class(demo_merged$Age)
+age_desc <- epi.descriptives(demo_merged$Age)$a
+View(age_desc)
+
+boxplot(demo_merged$Age, ylab="Age")
+
+exp(mean(log(demo_merged$Age)))
+
+#get descriptive stats for logPRNT50
+PRNT50_desc <- epi.descriptives(demo_merged$PRNT50)$a
+View(PRNT50_desc)
+
+summary(demo_merged$PRNT50)
+
+?epi.descriptives
+
+boxplot(demo_merged$PRNT50, ylab="Baseline logPRNT50")
+
+#get geometric mean for logPRNT50 
+exp(mean(log(demo_merged$PRNT50)))
+
+#get descriptive stats for CD4 
+CD4_desc <- epi.descriptives(demo_merged$TotalCytokine_CD4)$a
+View(CD4_desc)
+
+boxplot(demo_merged$TotalCytokine_CD4, ylab="Baseline CD4")
+
+?epi.descriptives
+```
