@@ -1,0 +1,112 @@
+---
+title: "Project Draft 1"
+author: "Madeleine"
+date: "2023-10-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###Install packages and import data
+```{r message=FALSE, warning=FALSE}
+setwd("~/Documents/OMICS/Project")
+
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("dearseq")
+
+
+library(dplyr)
+library(dearseq)
+library(edgeR)
+library(flashClust)
+library(UpSetR)
+library(readxl)
+library(tidyverse)
+
+```
+
+
+
+Design data matrix
+```{r designdatamatrix}
+antibodyValues <- read_excel("YF_Antibodies_D0D28 Results.xlsx") %>% 
+  select(c("Participant ID", "PRNT50", "Log PRNT50","Day Abs Num2")) %>% 
+  rename(VisitID = "Day Abs Num2", ParticipantID = "Participant ID", logPRNT50 = "Log PRNT50") 
+samples <- unique(antibodyValues$ParticipantID)
+
+antibodyValues_wide <- antibodyValues %>% 
+  pivot_wider(id_cols=c("ParticipantID"), names_from = VisitID, values_from = c("PRNT50", "logPRNT50")) %>% 
+  rename(PRNT50_Day0 = "PRNT50_0", PRNT50_Day28 = "PRNT50_28", LogPRNT50_Day0 = "logPRNT50_0", LogPRNT50_Day28 = "logPRNT50_28")
+antibodyValues_wide$logFold <- antibodyValues_wide$LogPRNT50_Day28 - antibodyValues_wide$LogPRNT50_Day0
+antibodyValues_wide$fold <- antibodyValues_wide$PRNT50_Day28 / antibodyValues_wide$PRNT50_Day0
+#antibodyValues_wide <- antibodyValues_wide %>% arrange(LogPRNT50_Day0, PRNT50_Day0)
+antibodyValues_wide_print <- antibodyValues_wide %>% 
+  select(-c(fold))
+
+#need a dataframe with the sample names (i.e. VisitID) and the treatment group assignment
+designmatrix <- data.frame(ParticipantID = antibodyValues_wide$ParticipantID, day28logPRNT50 = antibodyValues_wide$LogPRNT50_Day28, day0logprnt50 = antibodyValues_wide$LogPRNT50_Day0)
+```
+
+```{r}
+library(writexl)
+metadata <- read_excel("DM_YF_metadata.xlsx") %>% 
+  filter(ParticipantID %in% samples) %>% 
+  select(c("ParticipantID", "VisitID", "Sample name sample sheet")) %>% 
+  rename(sampleID = "Sample name sample sheet")
+metadata$VisitID <- as.numeric(metadata$VisitID)
+metadata$VisitID[metadata$VisitID>28] = 28 
+metadata$VisitID[metadata$VisitID==4] = 3
+#write_xlsx(metadata, "~/Documents/OMICS/Project/metadata_complete_oct18.xlsx")
+antibody_sampleIDs <- left_join(antibodyValues, metadata, by=join_by(ParticipantID, VisitID)) 
+```
+
+Plotting antibody 
+```{r}
+antibodyValues_plot <- antibodyValues
+antibodyValues_plot$VisitDay <- ifelse(antibodyValues_plot$VisitID==28, "Day 28", "Day 0")
+
+antibodyValues_plot_asc_d28 <- antibodyValues_plot %>% 
+  filter(VisitID==0) %>%
+  arrange(PRNT50)
+levels = antibodyValues_plot_asc_d28$ParticipantID
+
+antibodyValues_plot$ParticipantID <- factor(antibodyValues_plot$ParticipantID, levels = levels)
+
+#Colors for graphs: c("#800080", "#00008B", "#FF69B4", "#00CED1")
+p<- ggplot(antibodyValues_plot, aes(x=ParticipantID, y = PRNT50, fill = VisitDay)) + 
+  geom_bar(position = "dodge", stat = "identity") + 
+  labs(fill = "Day of sample", x= "Participant",y ="", title = "PRNT50 values at day 0 and day 28")+
+  scale_fill_manual(values = c("#00CED1", "#800080")) +
+  theme(axis.text.x = element_blank())
+  theme_minimal()+
+  theme(legend.position="none")
+
+q <- ggplot(antibodyValues_plot, aes(x=ParticipantID, y = logPRNT50, fill = VisitDay)) + 
+  geom_bar(position="dodge", stat = "identity") +
+  scale_fill_manual(values = c("#00CED1", "#800080")) +
+  labs(fill = "Day of sample", x= "Participant",y="",title = "log(PRNT50) values at day 0 and day 28")+
+  theme(axis.text.x = element_blank())
+  theme_minimal()
+  theme(legend.position="none")
+
+combined_plot <- p + q +
+  facet_wrap(~., scales = "free", ncol = 2) +
+  theme(strip.text = element_text(size = 15, face = "bold")) +
+  theme(legend.position = "center")
+```
+
+
+Gene expression matrix 
+```{r genexpressionmatrix}
+rawcounts_df <- read_excel("Raw-counts_transposed Results.xlsx")
+genes <- rawcounts_df$Genes
+rawcounts_df <- rawcounts_df[,-c(1:5)]
+```
+
+```{r savedata}
+save(antibodyValues, metadata, rawcounts_df, designmatrix, file = "cleandata.rdata")
+```
