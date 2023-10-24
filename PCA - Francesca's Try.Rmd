@@ -1,0 +1,134 @@
+---
+title: "PCA - Trial"
+author: "Francesca"
+date: "2023-10-20"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(edgeR)
+library(limma)
+library(UpSetR)
+library(flashClust)
+library(dendextend)
+library(readxl)
+
+
+raw_genes <- read.csv("~/Documents/BASICS R/omics_project_gr2/DM_raw-counts_transposed(1).csv")
+metadata <- read_xlsx("metadata_complete_oct18.xlsx")
+
+# Clean Participant Data
+
+raw_genes <- raw_genes %>% 
+  select (-X13.YF, -X14.YF, -X15.YF, -X16.YF, -X17.YF, -X18.YF, -X19.YF, -X20.YF,
+          -X41.YF, -X42.YF, -X43.YF, -X44.YF)
+           
+new_col_names <- character(0)
+
+for (p in 1:18) {
+  for (d in c(0, 1, 3, 28)) {
+    new_col_names <- c(new_col_names, paste0("P", p, ".D", d))
+  }
+}
+
+colnames(raw_genes)[2:73] <- new_col_names
+
+# Remove genes that were not observed
+
+genes_no0 <- rowSums(dplyr::select(raw_genes, -dplyr::starts_with("Genes"))) > 0
+table(genes_no0)
+
+raw_genes_no0 <- dplyr::filter(raw_genes, genes_no0)
+dim(raw_genes_no0)
+
+# Calculate CPM
+
+mycpmfun <- function(x) {
+  return((x/sum(x)) * 10^6)
+}
+cpm <- apply(dplyr::select(raw_genes_no0, -starts_with("Genes")), MARGIN = 2,
+             FUN = mycpmfun)
+raw_genes_no0_cpm2p <- dplyr::filter(raw_genes_no0, rowSums(cpm > 2) >= 5)
+dim(raw_genes_no0_cpm2p)
+
+# Plots
+
+metadata$VisitID <- factor(metadata$VisitID, levels = c(0, 1, 3, 28))
+colors <- c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96")
+bp_col <- colors[as.numeric(metadata$VisitID)]
+
+boxplot(log2(select(raw_genes_no0_cpm2p, -starts_with("Genes"))),
+        col = as.character(bp_col),
+        xlab = "Samples", ylab = "log2(raw counts)", axes = FALSE)
+axis(2)
+box()
+legend("topright", title = "Day", legend = levels(metadata$VisitID), 
+       col = c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96"), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
+str(metadata$VisitID)
+
+barplot(colSums(select(raw_genes_no0_cpm2p, -starts_with("Genes"))),
+        col = as.character(bp_col), xlab = "Samples", ylab = "Library size", names.arg = "")
+axis(2)
+box()
+legend("topright", title = "Day", legend = levels(metadata$VisitID), 
+       col = c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96"), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
+# Compute TMM Normalization
+
+raw_count_DGE <- DGEList(counts = select(raw_genes_no0_cpm2p, -starts_with("Genes")),
+                        genes = select(raw_genes_no0_cpm2p,
+                                                                  starts_with("Genes")))
+raw_count_DGE_normfact <- edgeR::calcNormFactors(raw_count_DGE, method = "TMM")
+
+raw_count_DGE_normfact_TMMlog2cpm <- edgeR::cpm(raw_count_DGE_normfact, log = TRUE)
+
+
+
+```
+
+# PCA Try
+```{r}
+
+library(FactoMineR)
+#create a matrix with standardized data 
+normdata<- as.data.frame(raw_count_DGE_normfact_TMMlog2cpm)
+row_names <- raw_genes_no0_cpm2p$Genes
+rownames(normdata) <- row_names
+
+standardized_normdata<- scale(normdata, center = TRUE, scale = TRUE)
+
+mean(standardized_normdata)
+sd(standardized_normdata)
+
+#transpose matrix so that each row is a sample (d0, d1, d3 or d28 for each patient) and each column represent a variable (gene expression and antibody titers)
+standardized_normdata <- t(standardized_normdata)
+dim(standardized_normdata) #72 samples: 4 per patient 
+
+
+#find correlation 
+cor(standardized_normdata)
+
+#apply PCA 
+PCA1 <- PCA(standardized_normdata)
+plot(PCA1) #graph of samples with labels
+plot(PCA1, choix = "var", label = "none") #graph of variables 
+plot(PCA1, choix = "ind", label = "none") #graph of individuals without name labels
+
+#get eigenvalues 
+plot(PCA1$eig[, "eigenvalue"], type = "b", ylab = "Eigenvalue")
+abline(h = mean(PCA1$eig[, "eigenvalue"]), col = "red", lty = "dotted", lwd = 2)
+
+sum(PCA1$eig[, "eigenvalue"] > mean(PCA1$eig[, "eigenvalue"]))
+
+#red line shows the PCs that account for more variability than others 
+
+```
+
+
+
+```
+
