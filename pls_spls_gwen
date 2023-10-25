@@ -1,4 +1,5 @@
 # Attempt to try and run an sPLS and PLS model... but not working
+# The 'normfact_TMM_log2cpm_counts.Rdata' file is the one from the clean data in the dendrogram code!
 
 # Packages
 
