@@ -103,10 +103,11 @@ legend("topright", title = "Day", legend = levels(metadata$VisitID),
 ), 
        pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
 
-# merge DGE back with gene counts column
-test <- as.data.frame(raw_count_DGE_normfact_TMMlog2cpm)
+# merge DGE back with gene counts column - this is our TMM normalized log2cpm data
+normfact_TMM_log2cpm_counts <- as.data.frame(raw_count_DGE_normfact_TMMlog2cpm)
 row_names <- raw_genes_no0_cpm2p$Genes
-rownames(test) <- row_names
+rownames(normfact_TMM_log2cpm_counts) <- row_names
+save(test, file = 'normfact_TMM_log2cpm_counts.Rdata')
 
 # Build Dendrogram
 
