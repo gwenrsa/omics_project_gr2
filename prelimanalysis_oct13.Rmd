@@ -33,35 +33,42 @@ library(tidyverse)
 
 Design data matrix
 ```{r designdatamatrix}
+library(dplyr)
+library(tidyverse)
 antibodyValues <- read_excel("YF_Antibodies_D0D28 Results.xlsx") %>% 
-  select(c("Participant ID", "PRNT50", "Log PRNT50","Day Abs Num2")) %>% 
-  rename(VisitID = "Day Abs Num2", ParticipantID = "Participant ID", logPRNT50 = "Log PRNT50") 
+  select(c("Participant ID", "PRNT50", "Log PRNT50","Day Abs Num2"))
+antibodyValues<- dplyr::rename(antibodyValues, VisitID = "Day Abs Num2", ParticipantID = "Participant ID", logPRNT50 = "Log PRNT50") 
 samples <- unique(antibodyValues$ParticipantID)
 
 antibodyValues_wide <- antibodyValues %>% 
   pivot_wider(id_cols=c("ParticipantID"), names_from = VisitID, values_from = c("PRNT50", "logPRNT50")) %>% 
-  rename(PRNT50_Day0 = "PRNT50_0", PRNT50_Day28 = "PRNT50_28", LogPRNT50_Day0 = "logPRNT50_0", LogPRNT50_Day28 = "logPRNT50_28")
+  dplyr::rename(PRNT50_Day0 = "PRNT50_0", PRNT50_Day28 = "PRNT50_28", LogPRNT50_Day0 = "logPRNT50_0", LogPRNT50_Day28 = "logPRNT50_28")
 antibodyValues_wide$logFold <- antibodyValues_wide$LogPRNT50_Day28 - antibodyValues_wide$LogPRNT50_Day0
 antibodyValues_wide$fold <- antibodyValues_wide$PRNT50_Day28 / antibodyValues_wide$PRNT50_Day0
 #antibodyValues_wide <- antibodyValues_wide %>% arrange(LogPRNT50_Day0, PRNT50_Day0)
 antibodyValues_wide_print <- antibodyValues_wide %>% 
   select(-c(fold))
 
-#need a dataframe with the sample names (i.e. VisitID) and the treatment group assignment
-designmatrix <- data.frame(ParticipantID = antibodyValues_wide$ParticipantID, day28logPRNT50 = antibodyValues_wide$LogPRNT50_Day28, day0logprnt50 = antibodyValues_wide$LogPRNT50_Day0)
+antibodyState <- antibodyValues_wide %>% 
+  select(c(ParticipantID, LogPRNT50_Day28, LogPRNT50_Day0, logFold))
+antibodyState2 <- antibodyValues_wide %>% 
+  select(c(ParticipantID, logFold))
+
 ```
 
 ```{r}
 library(writexl)
 metadata <- read_excel("DM_YF_metadata.xlsx") %>% 
-  filter(ParticipantID %in% samples) %>% 
-  select(c("ParticipantID", "VisitID", "Sample name sample sheet")) %>% 
-  rename(sampleID = "Sample name sample sheet")
+  dplyr::filter(ParticipantID %in% samples) %>% 
+  dplyr::select(c("ParticipantID", "VisitID", "Sample name sample sheet")) %>% 
+  dplyr::rename(sampleID = "Sample name sample sheet")
 metadata$VisitID <- as.numeric(metadata$VisitID)
 metadata$VisitID[metadata$VisitID>28] = 28 
 metadata$VisitID[metadata$VisitID==4] = 3
 #write_xlsx(metadata, "~/Documents/OMICS/Project/metadata_complete_oct18.xlsx")
-antibody_sampleIDs <- left_join(antibodyValues, metadata, by=join_by(ParticipantID, VisitID)) 
+
+
+metadata <- left_join(metadata, antibodyState, by = join_by("ParticipantID"))
 ```
 
 Plotting antibody 
@@ -100,15 +107,6 @@ combined_plot <- p + q +
 ```
 
 
-Gene expression matrix 
-```{r genexpressionmatrix}
-rawcounts_df <- read_excel("Raw-counts_transposed Results.xlsx")
-genes <- rawcounts_df$Genes
-rawcounts_df <- rawcounts_df[,-c(1:5)]
-rownames(rawcounts_df) <- genes
-
-```
-
 ```{r savedata}
-save(antibodyValues, metadata, rawcounts_df, designmatrix, file = "cleandata.rdata")
+save(antibodyValues, metadata, file = "cleandata.rdata")
 ```
