@@ -48,7 +48,8 @@ dim(raw_genes_no0_cpm2p)
 # Plots
 
 metadata$VisitID <- factor(metadata$VisitID, levels = c(0, 1, 3, 28))
-colors <- c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96")
+colors <- c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+)
 bp_col <- colors[as.numeric(metadata$VisitID)]
 
 boxplot(log2(select(raw_genes_no0_cpm2p, -starts_with("Genes"))),
@@ -57,17 +58,31 @@ boxplot(log2(select(raw_genes_no0_cpm2p, -starts_with("Genes"))),
 axis(2)
 box()
 legend("topright", title = "Day", legend = levels(metadata$VisitID), 
-       col = c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96"), 
+       col = c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+), 
        pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
 
-str(metadata$VisitID)
+# Day-Arranged Libsize 
+lib_size_plot <- metadata %>% 
+  mutate (libsize = colSums(select(raw_genes_no0_cpm2p, -starts_with("Genes")))) %>% 
+  group_by (VisitID) %>% 
+  arrange (VisitID)
 
+barplot(lib_size_plot$libsize, col=rep(c("#800080","#00008B","#FF69B4","#00CED1"),each=18))
+legend("topright", title = "Day", legend = levels(metadata$VisitID), 
+       col = c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+       ), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
+
+# Participant-Arranged Libsize
 barplot(colSums(select(raw_genes_no0_cpm2p, -starts_with("Genes"))),
         col = as.character(bp_col), xlab = "Samples", ylab = "Library size", names.arg = "")
 axis(2)
 box()
 legend("topright", title = "Day", legend = levels(metadata$VisitID), 
-       col = c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96"), 
+       col = c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+), 
        pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
 
 # Compute TMM Normalization
@@ -84,8 +99,14 @@ boxplot(raw_count_DGE_normfact_TMMlog2cpm, xlab = "Samples", col = as.character(
 axis(2)
 box()
 legend("topright", title = "Day", legend = levels(metadata$VisitID), 
-       col = c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96"), 
+       col = c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+), 
        pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
+# merge DGE back with gene counts column
+test <- as.data.frame(raw_count_DGE_normfact_TMMlog2cpm)
+row_names <- raw_genes_no0_cpm2p$Genes
+rownames(test) <- row_names
 
 # Build Dendrogram
 
@@ -97,30 +118,32 @@ dend_norm <- as.dendrogram(hclust(deucl_norm, method = "ward"))
 
 assign_color <- function(label) {
   if (grepl("D0", label)) {
-    return("#FF6F61")  # Red
+    return("#800080")  
   } else if (grepl("D1", label)) {
-    return("#AEC6CF")  # Blue
+    return("#00008B") 
   } else if (grepl("D3", label)) {
-    return("#B2D8B2")  # Green
+    return("#FF69B4")  # Green
   } else if (grepl("D28", label)) {
-    return("#FDFD96")  # Yellow
+    return("#00CED1")  # Yellow
   } else {
     return("#000000")  # Default color (black)
   }
 }
 
-label_colors <- sapply(labels(dend_raw), assign_color)
-label_colors <- sapply(labels(dend_norm), assign_color)
-labels_colors(dend_raw) <- label_colors
-labels_colors(dend_norm) <- label_colors
+label_colors_raw <- sapply(labels(dend_raw), assign_color)
+label_colors_norm <- sapply(labels(dend_norm), assign_color)
+labels_colors(dend_raw) <- label_colors_raw
+labels_colors(dend_norm) <- label_colors_norm
 
 plot(dend_raw)
 legend("topright", title = "Day", legend = levels(metadata$VisitID), 
-       col = c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96"), 
+       col = c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+), 
        pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
 
 plot(dend_norm)
 legend("topright", title = "Day", legend = levels(metadata$VisitID), 
-       col = c("#FF6F61", "#AEC6CF", "#B2D8B2", "#FDFD96"), 
+       col = c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+), 
        pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
 
