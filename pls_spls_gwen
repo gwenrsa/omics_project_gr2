@@ -1,0 +1,60 @@
+# Attempt to try and run an sPLS and PLS model... but not working
+
+# Packages
+
+library(mixOmics)
+library(readxl)
+library(pls)
+
+# Objective: Find latent variables that are linear combinations of original variables,
+# orthogonal to one another, and best explain the response Y (antibody levels at D28).
+# LV involve a minimal number of the original variables (variable selection). 
+
+# ATTEMPT 1: sPLS USING D1 GENE EXPRESSION AND D28 ANTIBODY LEVELS
+
+load(file = "normfact_TMM_log2cpm_counts.Rdata")
+
+# X: gene expression at D1 (gene_expression_D1)
+gene_expression_D1 <- normfact_TMM_log2cpm_counts[ , seq(2, ncol(normfact_TMM_log2cpm_counts), by = 4)]
+
+# Y: antibody level at D28 (antibodies_D28)
+DM_YF_Antibodies_D0D28 <- read_excel("DM_YF_Antibodies_D0D28.xlsx")
+
+antibodies_D28 <- as.data.frame(DM_YF_Antibodies_D0D28) %>% 
+  filter (day_abs == "J28") %>% 
+  select (PRNT50, logPRNT50)
+
+new_row_names <- character(0)
+
+for (p in 1:18) {
+  for (d in c(28)) {
+    new_row_names <- c(new_row_names, paste0("P", p, ".D", d))
+  }
+}
+
+rownames(antibodies_D28) <- new_row_names
+
+# PLS
+
+pls_model <- plsr(Y ~ X, ncomp = 4)
+
+
+X <- t(gene_expression_D1)
+Y <- as.vector(antibodies_D28$logPRNT50)
+p <- ncol(X); p
+n <- nrow(X); n
+r <- 10
+splsda_1 <- splsda(X, Y, ncomp = r, keepX = rep(5, r))
+
+# Tuning
+
+splsda_tuned <- tune.splsda(X, Y, ncomp = 4, test.keepX = c(1:25), 
+                             validation="Mfold", folds=10, nrepeat=20, 
+                             measure = "AUC", 
+                             cpus=parallel::detectCores()-2)
+# not working: seems like if our outcome is continuous we can use PLS
+
+# ATTEMPT 2: PLS USING D1 GENE EXPRESSION AND D28 ANTIBODY LEVELS
+
+pls_model <- plsr(Y ~ X, ncomp = 4)
+plot(pls_model)
