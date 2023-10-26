@@ -1,0 +1,201 @@
+---
+title: "dearseq_oct23"
+author: "Madeleine"
+date: "2023-10-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(readxl)
+library(dplyr)
+library(limma)
+load("cleandata.rdata")
+sampleIDs <- metadata$sampleID
+rawcounts <- read_excel("Raw-counts_transposed Results.xlsx") %>% 
+  select(c( "Genes", all_of(sampleIDs)))
+dim(rawcounts)
+```
+### Day 1 with filtering 
+Filtering 
+```{r}
+
+gene_no0 <- rowSums(select(rawcounts, -1)) >0
+rawcounts_no0 <- filter(rawcounts, gene_no0)
+dim(rawcounts_no0)
+mycpmfun <- function(x) { 
+  return((x/sum(x))*10^6)
+}
+
+cpm <-apply(select(rawcounts_no0, -1), MARGIN = 2, FUN = mycpmfun)
+
+rawcounts_no0_cpm2p <- filter(rawcounts_no0, rowSums(cpm>2)>=5)
+dim(rawcounts_no0_cpm2p)
+
+library(edgeR)
+genesDGE <- DGEList(counts = select(rawcounts_no0_cpm2p, -1), samples = metadata, genes = select(rawcounts_no0_cpm2p, 1))
+genes_normfact <- edgeR::calcNormFactors(genesDGE, method = "TMM")
+normfact_no0_cpm2p_TMMlog2cpm <- edgeR::cpm(genes_normfact, log = T)
+```
+
+Design matrix
+```{r}
+genesDay1_normfact_f <- genes_normfact[,metadata$VisitID==1]
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genes_normfact$samples))
+samplesDay1 <- metadata %>% 
+  filter(VisitID ==1)
+samplesDay1 <- samplesDay1$sampleID
+design_day1 <- design %>% filter(row.names(design) %in% samplesDay1)
+design_day1 <- design_day1 %>% 
+  as.matrix()
+```
+
+```{r}
+v_1_f <- voom(counts = genesDay1_normfact_f, design = design_day1, plot = F)
+fit_1_f <- lmFit(v_1_f, design = design_day1)
+logfoldchange_1_f <- fit_1_f$coefficients[,2]
+
+fit_1_f <- eBayes(fit_1_f, robust = T)
+voomlimma_signif <- decideTests(fit_1_f, adjust.method = "BH", p.value = 0.05, lfc=1)
+genelist_voomlimma_f <- genesDay1_normfact$genes$Genes[as.logical(voomlimma_signif)]
+summary(voomlimma_signif)
+```
+
+DearSeq
+```{r}
+res_dearseq1_f_a <- dearseq::dear_seq(exprmat=genesDay1_normfact_f$counts, variables2test = design_day1[,"LogPRNT50_Day28", drop = F], covariates = design_day1[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "asymptotic", preprocessed = F)
+summary(res_dearseq1_f_a)
+# 0 genes
+set.seed(100)
+res_dearseq1_f_p <- dearseq::dear_seq(exprmat=genesDay1_normfact_f$counts, variables2test = design_day1[,"LogPRNT50_Day28", drop = F], covariates = design_day1[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = F)
+summary(res_dearseq1_f_p)
+# 0 genes
+```
+
+### Day 1 without filtering 
+Filtering 
+```{r}
+genesDGE_nf <- DGEList(counts = select(rawcounts_no0, -1), samples = metadata, genes = select(rawcounts_no0, 1))
+genes_normfact_nf <- edgeR::calcNormFactors(genesDGE_nf, method = "TMM")
+rawcounts_no0_TMMlog2cpm_nf <- edgeR::cpm(genes_normfact_nf, log = T)
+```
+
+Design matrix
+```{r}
+genesDay1_normfact_nf <- genes_normfact_nf[,metadata$VisitID==1]
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genes_normfact_nf$samples))
+samplesDay1 <- metadata %>% 
+  filter(VisitID ==1)
+samplesDay1 <- samplesDay1$sampleID
+design <- design %>% filter(row.names(design) %in% samplesDay1)
+design_day1 <- design %>% 
+  as.matrix()
+```
+
+Voom-limma pipeline
+```{r}
+v_1_nf <- voom(counts = genesDay1_normfact_nf, design = design_day1, plot = F)
+fit_1_nf <- lmFit(v_1_nf, design = design_day1)
+logfoldchange_1_nf <- fit_1_nf$coefficients[,2]
+
+fit_1_nf <- eBayes(fit_1_nf, robust = T)
+voomlimma_signif <- decideTests(fit_1_nf, adjust.method = "BH", p.value = 0.05, lfc=1)
+genelist_voomlimma_nf <- genesDay1_normfact_nf$genes$Genes[as.logical(voomlimma_signif)]
+summary(voomlimma_signif)
+```
+
+DearSeq
+```{r}
+res_dearseq1_nf_a <- dearseq::dear_seq(exprmat=genesDay1_normfact_nf$counts, variables2test = design_day1[,"LogPRNT50_Day28", drop = F], covariates = design_day1[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "asymptotic", preprocessed = F)
+summary(res_dearseq1_nf_a)
+# 0 genes
+set.seed(100)
+res_dearseq1_nf_p <- dearseq::dear_seq(exprmat=genesDay1_normfact_nf$counts, variables2test = design_day1[,"LogPRNT50_Day28", drop = F], covariates = design_day1[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = F)
+#removes 2072 genes with 0 variance from testing procedure, "should've been removed beforehand"
+summary(res_dearseq1_nf_p)
+plot(res_dearseq1_nf_p)
+# 13 significant genes when not filtering 
+
+dearseq_signif_1_nf_p <- res_dearseq1_nf_p$pvals$adjPval<0.05&logfoldchange_1_nf >1
+geneList_1_nf_p <- genesDay1_normfact_nf$genes$Genes[as.logical(dearseq_signif_1_nf_p)]
+```
+
+### Day 3 with filtering 
+Design matrix
+```{r}
+genesDay3_normfact_f <- genes_normfact[,metadata$VisitID==3]
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genes_normfact$samples))
+samplesDay3 <- metadata %>% 
+  filter(VisitID ==3)
+samplesDay3 <- samplesDay3$sampleID
+design_day3 <- design %>% filter(row.names(design) %in% samplesDay3)
+design_day3 <- design_day3 %>% 
+  as.matrix()
+```
+
+Voom-limma pipeline
+```{r}
+v_3_f <- voom(counts = genesDay3_normfact_f, design = design_day3, plot = F)
+fit_3_f <- lmFit(v_3_f, design = design_day3)
+logfoldchange_3_f <- fit_3_f$coefficients[,2]
+
+fit_3_f <- eBayes(fit_3_f, robust = T)
+voomlimma_signif <- decideTests(fit_3_f, adjust.method = "BH", p.value = 0.05, lfc=1)
+genelist_voomlimma_f <- genesDay3_normfact_f$genes$Genes[as.logical(voomlimma_signif)]
+summary(voomlimma_signif)
+```
+
+DearSeq
+```{r}
+res_dearseq3_f_a <- dearseq::dear_seq(exprmat=genesDay3_normfact_f$counts, variables2test = design_day3[,"LogPRNT50_Day28", drop = F], covariates = design_day3[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "asymptotic", preprocessed = T)
+summary(res_dearseq3_f_a)
+# 0 genes 
+set.seed(100)
+res_dearseq3_f_p <- dearseq::dear_seq(exprmat=genesDay3_normfact_f$counts, variables2test = design_day3[,"LogPRNT50_Day28", drop = F], covariates = design_day3[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = T)
+summary(res_dearseq3_f_p)
+#0  genes
+
+dearseq_signif_3_f_p <- res_dearseq3_f_p$pvals$adjPval<0.05&logfoldchange_3_f >1
+geneList_3_f_p <- gene_normfact$genes$Genes[as.logical(dearseq_signif_3_f_p)]
+```
+
+### Day 3 without filtering 
+Design matrix
+```{r}
+genesDay3_normfact_nf <- genes_normfact_nf[,metadata$VisitID==3]
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genes_normfact_nf$samples))
+samplesDay3 <- metadata %>% 
+  filter(VisitID ==3)
+samplesDay3 <- samplesDay3$sampleID
+design_day3 <- design %>% filter(row.names(design) %in% samplesDay3)
+design_day3 <- design_day3 %>% 
+  as.matrix()
+```
+
+
+
+Voom-limma pipeline
+```{r}
+v_3_nf <- voom(counts = genesDay3_normfact_nf, design = design_day3, plot = F)
+fit_3_nf <- lmFit(v_3_nf, design = design_day3)
+logfoldchange_3_nf <- fit_3_nf$coefficients[,2]
+```
+
+DearSeq
+```{r}
+res_dearseq3_nf_a <- dearseq::dear_seq(exprmat=genesDay3_normfact_nf$counts, variables2test = design_day3[,"LogPRNT50_Day28", drop = F], covariates = design_day3[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "asymptotic", preprocessed = F)
+summary(res_dearseq3_nf_a)
+# 0 genes
+
+set.seed(100)
+res_dearseq3_nf_p <- dearseq::dear_seq(exprmat=genesDay3_normfact_nf$counts, variables2test = design_day3[,"LogPRNT50_Day28", drop = F], covariates = design_day3[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = F)
+summary(res_dearseq3_nf_p)
+# 14 significant genes!!!!
+
+dearseq_signif_3_nf_p <- res_dearseq3_nf_p$pvals$adjPval<0.05&logfoldchange_3_nf >1
+geneList_3_nf_p <- genesDay3_normfact_nf$genes$Genes[as.logical(dearseq_signif_3_nf_p)]
+```
+
+```{r}
+save(normfact_no0_cpm2p_TMMlog2cpm, file="normfact_TMM_log2cpm_counts.Rdata")
+
+```
