@@ -1,0 +1,179 @@
+---
+title: "PCA - Try 2"
+author: "Francesca"
+date: "2023-11-02"
+output: html_document
+---
+
+
+## PCA
+
+
+### Libraries (additional)
+```{r}
+library(FactoMineR)
+library(factoextra)
+
+library(dplyr)
+library(edgeR)
+library(limma)
+library(UpSetR)
+library(flashClust)
+library(dendextend)
+library(readxl)
+```
+
+
+# Clean and Normalize Data
+
+```{r}
+# Read in metadata, raw genes, antibodies 
+
+raw_genes <- read.csv("~/Documents/BASICS R/omics_project_gr2/DM_raw-counts_transposed(1).csv")
+metadata <- read_xlsx("metadata_complete_oct18.xlsx")
+antibodies_raw <- read_xlsx("DM_YF_Antibodies_D0D28.xlsx")
+
+#Choose only relevant coloumn in antibody
+antibodies_raw_1 <- antibodies_raw[, c("ParticipantID", "day_abs_num2", "PRNT50", "logPRNT50")]
+antibodies_raw_1 <- antibodies_raw_1 %>% rename("VisitID" = "day_abs_num2") %>% arrange(VisitID)
+
+#Comparing IDS in metadata vs. antibody data:
+
+  meta_IDs<-metadata %>% select(ParticipantID) %>% pull()
+  meta_IDs<-unique(meta_IDs)
+ 
+  antibody_IDs<-antibodies_raw_1 %>% select(ParticipantID) %>% pull()
+  antibody_IDs<-unique(antibody_IDs)
+ 
+  length(meta_IDs)
+  length(antibody_IDs)
+  #same number of participants in both 
+  # metadata has 72 rows = d0, d1, d3, and d28
+  
+#Gwen's normalization -- 
+  
+# Remove genes that were not observed
+  
+raw_genes <- raw_genes %>% 
+  select (-X13.YF, -X14.YF, -X15.YF, -X16.YF, -X17.YF, -X18.YF, -X19.YF, -X20.YF,
+          -X41.YF, -X42.YF, -X43.YF, -X44.YF)
+
+genes_no0 <- rowSums(dplyr::select(raw_genes, -dplyr::starts_with("Genes"))) > 0
+table(genes_no0)
+
+raw_genes_no0 <- dplyr::filter(raw_genes, genes_no0)
+dim(raw_genes_no0)
+
+# Calculate CPM
+
+mycpmfun <- function(x) {
+  return((x/sum(x)) * 10^6)
+}
+cpm <- apply(dplyr::select(raw_genes_no0, -starts_with("Genes")), MARGIN = 2,
+             FUN = mycpmfun)
+raw_genes_no0_cpm2p <- dplyr::filter(raw_genes_no0, rowSums(cpm > 2) >= 5)
+dim(raw_genes_no0_cpm2p)
+
+
+# Compute TMM Normalization
+
+raw_count_DGE <- DGEList(counts = select(raw_genes_no0_cpm2p, -starts_with("Genes")),
+                        genes = select(raw_genes_no0_cpm2p,
+                                                                  starts_with("Genes")))
+raw_count_DGE_normfact <- edgeR::calcNormFactors(raw_count_DGE, method = "TMM")
+
+raw_count_DGE_normfact_TMMlog2cpm <- edgeR::cpm(raw_count_DGE_normfact, log = TRUE)
+
+```
+
+
+### Preparing data frame for PCA
+```{r}
+
+#rename the column names to match the sample name in the metadata
+name1 <- colnames(raw_count_DGE_normfact_TMMlog2cpm)
+name1 <- chartr(".","-",name1)
+name1 <- gsub("X","",name1)
+name1
+colnames(raw_count_DGE_normfact_TMMlog2cpm) <- name1
+
+# transposing data frame
+normdata<- as.data.frame(raw_count_DGE_normfact_TMMlog2cpm)
+standardized_normdata<- scale(normdata, center = TRUE, scale = TRUE)
+
+mean(standardized_normdata)
+sd(standardized_normdata)
+
+#transpose matrix so that each row is a sample (d0, d1, d3 or d28 for each patient) and each column represent a variable (gene expression and antibody titers)
+standardized_normdata <- t(standardized_normdata)
+dim(standardized_normdata)
+
+
+df_PCA <- standardized_normdata
+  class(df_PCA)
+  df_PCA <- as.data.frame(df_PCA) # changing class
+  
+  
+# temporarily adding sample names back into data frame
+sample_names<-rownames(df_PCA)
+class(sample_names)
+df_PCA$sampleID <- sample_names
+
+df_PCA <- df_PCA%>%
+  select(sampleID, everything())
+
+df_particpant_IDs <- metadata
+
+
+# temporarily adding participant IDs into data frame
+df_PCA<-left_join(df_PCA, df_particpant_IDs, by = "sampleID")
+
+df_PCA <- df_PCA %>%
+  select(sampleID, ParticipantID, VisitID, everything())
+
+
+# Adding day 28 antibody percentage to data frame (repeating d28 antibody values for all 4 observations of 1 participant)
+df_antibody <-antibodies_raw_1 %>% filter(VisitID==28) %>% select(ParticipantID, logPRNT50)
+colnames(df_antibody)[2]<-"d28logPRNT50"
+
+df_PCA<-left_join(df_PCA, df_antibody, by = "ParticipantID")
+
+
+df_PCA <- df_PCA %>%
+  select(sampleID, ParticipantID, VisitID, d28logPRNT50, everything())
+
+#Create data frames with just days and just antibodies 
+
+df_PCA_antibody <- df_PCA %>% select(-sampleID,   -ParticipantID, -VisitID)
+df_PCA_days <- df_PCA %>% select(-sampleID,   -ParticipantID, -d28logPRNT50)
+
+```
+
+# Antibody percentage
+```{r}
+normPCA_antibody <- PCA(df_PCA_antibody, quanti.sup = which(names(df_PCA_antibody) == "d28logPRNT50"))
+
+
+plot(normPCA_antibody, choix = "ind", label = "none", habillage = which(names(df_PCA_antibody) ==
+    "d28logPRNT50"), legend.title = "Percentage")
+
+plot(normPCA_antibody$eig[, "eigenvalue"], type = "b", ylab = "Eigenvalue")
+abline(h = mean(normPCA_antibody$eig[, "eigenvalue"]), col = "red", lty = "dotted", lwd = 2) 
+
+#Kaiser Criterion: Red line shows the PCs that account for more variability than others - showing the first 8 are important in our analysis 
+#Catell Criterion: Choosing all those at the elbow - 7
+```
+
+# Visit ID 
+
+```{r}
+df_PCA_days <- df_PCA_days %>%select(everything(), VisitID)
+
+
+normPCA_days <- PCA(df_PCA_days, quali.sup = which(names(df_PCA_days) == "VisitID"))
+plot(normPCA_days, choix = "ind", label = "none", habillage = which(names(df_PCA_days) ==
+    "VisitID"))
+
+plot(normPCA_days$eig[, "eigenvalue"], type = "b", ylab = "Eigenvalue")
+abline(h = mean(normPCA_days$eig[, "eigenvalue"]), col = "red", lty = "dotted", lwd = 2) 
+```
