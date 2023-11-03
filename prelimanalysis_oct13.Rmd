@@ -20,7 +20,6 @@ BiocManager::install("dearseq")
 
 
 library(dplyr)
-library(dearseq)
 library(edgeR)
 library(flashClust)
 library(UpSetR)
@@ -38,75 +37,30 @@ library(tidyverse)
 antibodyValues <- read_excel("YF_Antibodies_D0D28 Results.xlsx") %>% 
   select(c("Participant ID", "PRNT50", "Log PRNT50","Day Abs Num2"))
 antibodyValues<- dplyr::rename(antibodyValues, VisitID = "Day Abs Num2", ParticipantID = "Participant ID", logPRNT50 = "Log PRNT50") 
-samples <- unique(antibodyValues$ParticipantID)
+participants <- unique(antibodyValues$ParticipantID)
 
 antibodyValues_wide <- antibodyValues %>% 
   pivot_wider(id_cols=c("ParticipantID"), names_from = VisitID, values_from = c("PRNT50", "logPRNT50")) %>% 
-  dplyr::rename(PRNT50_Day0 = "PRNT50_0", PRNT50_Day28 = "PRNT50_28", LogPRNT50_Day0 = "logPRNT50_0", LogPRNT50_Day28 = "logPRNT50_28")
+  rename(PRNT50_Day0 = "PRNT50_0", PRNT50_Day28 = "PRNT50_28", LogPRNT50_Day0 = "logPRNT50_0", LogPRNT50_Day28 = "logPRNT50_28")
 antibodyValues_wide$logFold <- antibodyValues_wide$LogPRNT50_Day28 - antibodyValues_wide$LogPRNT50_Day0
-antibodyValues_wide$fold <- antibodyValues_wide$PRNT50_Day28 / antibodyValues_wide$PRNT50_Day0
-#antibodyValues_wide <- antibodyValues_wide %>% arrange(LogPRNT50_Day0, PRNT50_Day0)
-antibodyValues_wide_print <- antibodyValues_wide %>% 
-  select(-c(fold))
 
 antibodyState <- antibodyValues_wide %>% 
   select(c(ParticipantID, LogPRNT50_Day28, LogPRNT50_Day0, logFold))
-antibodyState2 <- antibodyValues_wide %>% 
-  select(c(ParticipantID, logFold))
-
 ```
 
-```{r}
-library(writexl)
+```{r cleanmeta}
 metadata <- read_excel("DM_YF_metadata.xlsx") %>% 
-  dplyr::filter(ParticipantID %in% samples) %>% 
+  dplyr::filter(ParticipantID %in% participants) %>% 
   dplyr::select(c("ParticipantID", "VisitID", "Sample name sample sheet")) %>% 
-  dplyr::rename(sampleID = "Sample name sample sheet")
+  dplyr::rename(SampleID = "Sample name sample sheet")
 metadata$VisitID <- as.numeric(metadata$VisitID)
 metadata$VisitID[metadata$VisitID>28] = 28 
 metadata$VisitID[metadata$VisitID==4] = 3
-#write_xlsx(metadata, "~/Documents/OMICS/Project/metadata_complete_oct18.xlsx")
-
-
 metadata <- left_join(metadata, antibodyState, by = join_by("ParticipantID"))
-```
-
-Plotting antibody 
-```{r}
-antibodyValues_plot <- antibodyValues
-antibodyValues_plot$VisitDay <- ifelse(antibodyValues_plot$VisitID==28, "Day 28", "Day 0")
-
-antibodyValues_plot_asc_d28 <- antibodyValues_plot %>% 
-  filter(VisitID==0) %>%
-  arrange(PRNT50)
-levels = antibodyValues_plot_asc_d28$ParticipantID
-
-antibodyValues_plot$ParticipantID <- factor(antibodyValues_plot$ParticipantID, levels = levels)
-
-#Colors for graphs: c("#800080", "#00008B", "#FF69B4", "#00CED1")
-p<- ggplot(antibodyValues_plot, aes(x=ParticipantID, y = PRNT50, fill = VisitDay)) + 
-  geom_bar(position = "dodge", stat = "identity") + 
-  labs(fill = "Day of sample", x= "Participant",y ="", title = "PRNT50 values at day 0 and day 28")+
-  scale_fill_manual(values = c("#00CED1", "#800080")) +
-  theme(axis.text.x = element_blank())
-  theme_minimal()+
-  theme(legend.position="none")
-
-q <- ggplot(antibodyValues_plot, aes(x=ParticipantID, y = logPRNT50, fill = VisitDay)) + 
-  geom_bar(position="dodge", stat = "identity") +
-  scale_fill_manual(values = c("#00CED1", "#800080")) +
-  labs(fill = "Day of sample", x= "Participant",y="",title = "log(PRNT50) values at day 0 and day 28")+
-  theme(axis.text.x = element_blank())
-  theme_minimal()
-  theme(legend.position="none")
-
-combined_plot <- p + q +
-  facet_wrap(~., scales = "free", ncol = 2) +
-  theme(strip.text = element_text(size = 15, face = "bold")) +
-  theme(legend.position = "center")
 ```
 
 
 ```{r savedata}
-save(antibodyValues, metadata, file = "cleandata.rdata")
+save(antibodyValues, file = "antibodyValues.rdata")
+save(metadata, file = "metadata.rdata")
 ```
