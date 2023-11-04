@@ -1,0 +1,139 @@
+---
+title: "dearseq_adjustDay0"
+author: "Madeleine"
+date: "2023-11-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(readxl)
+library(dplyr)
+library(limma)
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("dearseq")
+load("metadata.rdata")
+sampleIDs <- metadata$SampleID
+rawcounts <- read.csv("DM_raw-counts_transposed.csv") 
+genes <- rawcounts$Genes
+rownames(rawcounts) <- genes
+
+#rename columns to match metadata
+name1 <- colnames(rawcounts[, -1])
+name1 <- chartr(".", "-", name1)
+name1 <- gsub("X", "", name1)
+colnames(rawcounts) <- c("Genes", name1)
+dim(rawcounts)
+
+#select columns that are in our metadata
+rawcounts <- select(rawcounts, c("Genes", all_of(sampleIDs)))
+dim(rawcounts)
+#removes 13 columns, now have 72 samples (4 for each participant) and 1 column with gene name
+
+#calculating cpm
+mycpmfun <- function(x) { 
+  return((x/sum(x))*10^6)
+}
+cpm <-apply(select(rawcounts_no0, -1), MARGIN = 2, FUN = mycpmfun)
+```
+
+
+```{r}
+#remove genes with 0 observations in all samples
+gene_no0 <- rowSums(select(rawcounts, -1)) >0
+rawcounts_no0 <- filter(rawcounts, gene_no0)
+dim(rawcounts_no0)
+#removes 6,289 genes with all zeros
+
+library(edgeR)
+genesDGE <- DGEList(counts = select(rawcounts_no0, -1), samples = metadata, genes = select(rawcounts_no0, 1))
+genes_normfact <- edgeR::calcNormFactors(genesDGE, method = "TMM")
+normfact_no0_cpm2p_TMMlog2cpm <- edgeR::cpm(genes_normfact, log = T)
+
+genesDay1_normfact <- genes_normfact[,metadata$VisitID==1]
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay1_normfact$samples))
+samplesDay1 <- metadata %>% 
+  filter(VisitID ==1)
+samplesDay1 <- samplesDay1$SampleID
+design_day1 <- design %>% filter(row.names(design) %in% samplesDay1)
+design_day1 <- design_day1 %>% 
+  as.matrix()
+
+res_dearseq1_a <- dearseq::dear_seq(exprmat=genesDay1_normfact$counts, variables2test = design_day1[,"LogPRNT50_Day28", drop = F], covariates = design_day1[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = T)
+summary(res_dearseq1_a)
+
+genesDay1 <- genesDGE[, metadata$VisitID==1]
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay1$samples))
+samplesDay1 <- metadata %>% 
+  filter(VisitID ==1)
+samplesDay1 <- samplesDay1$SampleID
+design_day1 <- design %>% filter(row.names(design) %in% samplesDay1)
+design_day1 <- design_day1 %>% 
+  as.matrix()
+
+res_dearseq1_b <- dearseq::dear_seq(exprmat=genesDay1$counts, variables2test = design_day1[,"LogPRNT50_Day28", drop = F], covariates = design_day1[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = F)
+summary(res_dearseq1_b)
+```
+
+### Day 3
+```{r}
+genesDay3_normfact <- genes_normfact[,metadata$VisitID==3]
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay3_normfact$samples))
+samplesDay3 <- metadata %>% 
+  filter(VisitID ==3)
+samplesDay3 <- samplesDay3$SampleID
+design_day3 <- design %>% filter(row.names(design) %in% samplesDay3)
+design_day3 <- design_day3 %>% 
+  as.matrix()
+
+res_dearseq3_a <- dearseq::dear_seq(exprmat=genesDay3_normfact$counts, variables2test = design_day3[,"LogPRNT50_Day28", drop = F], covariates = design_day3[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = T)
+summary(res_dearseq3_a)
+plot(res_dearseq3_a)
+#0 genes
+
+genesDay3 <- genesDGE[, metadata$VisitID==3]
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay3$samples))
+samplesDay3 <- metadata %>% 
+  filter(VisitID ==3)
+samplesDay3 <- samplesDay3$SampleID
+design_day3 <- design %>% filter(row.names(design) %in% samplesDay3)
+design_day3 <- design_day3 %>% 
+  as.matrix()
+
+res_dearseq3_b <- dearseq::dear_seq(exprmat=genesDay3$counts, variables2test = design_day3[,"LogPRNT50_Day28", drop = F], covariates = design_day3[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = F)
+summary(res_dearseq3_b)
+plot(res_dearseq3_b)
+#0 genes
+```
+### Day 1 and 3
+```{r}
+genesDay13_normfact <- genes_normfact[,metadata$VisitID %in% c(1, 3)]
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay13_normfact$samples))
+samplesDay13 <- metadata %>% 
+  filter(VisitID ==3 | VisitID == 1)
+samplesDay13 <- samplesDay13$SampleID
+design_day13 <- design %>% filter(row.names(design) %in% samplesDay13)
+design_day13 <- design_day13 %>% 
+  as.matrix()
+
+res_dearseq13_a <- dearseq::dear_seq(exprmat=genesDay13_normfact$counts, variables2test = design_day13[,"LogPRNT50_Day28", drop = F], covariates = design_day13[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = T)
+summary(res_dearseq13_a)
+plot(res_dearseq13_a)
+#0 genes
+
+genesDay13 <- genesDGE[, metadata$VisitID %in% c(1,3)]
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay13$samples))
+samplesDay13 <- metadata %>% 
+  filter(VisitID ==3 | VisitID==1)
+samplesDay13 <- samplesDay13$SampleID
+design_day13 <- design %>% filter(row.names(design) %in% samplesDay13)
+design_day13 <- design_day13 %>% 
+  as.matrix()
+
+res_dearseq13_b <- dearseq::dear_seq(exprmat=genesDay13$counts, variables2test = design_day13[,"LogPRNT50_Day28", drop = F], covariates = design_day13[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = F)
+summary(res_dearseq13_b)
+#0 genes
+```
+
+
