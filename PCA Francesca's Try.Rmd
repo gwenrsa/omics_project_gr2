@@ -5,11 +5,7 @@ date: "2023-11-02"
 output: html_document
 ---
 
-
-## PCA
-
-
-### Libraries (additional)
+# PCA
 ```{r}
 library(FactoMineR)
 library(factoextra)
@@ -18,22 +14,20 @@ library(dplyr)
 library(edgeR)
 library(limma)
 library(UpSetR)
-library(flashClust)
-library(dendextend)
 library(readxl)
+library(ggplot2)
 ```
 
 
-# Clean and Normalize Data
-
+# Data Preparation
 ```{r}
-# Read in metadata, raw genes, antibodies 
+#Read in metadata, raw genes, antibodies 
 
 raw_genes <- read.csv("~/Documents/BASICS R/omics_project_gr2/DM_raw-counts_transposed(1).csv")
 metadata <- read_xlsx("metadata_complete_oct18.xlsx")
 antibodies_raw <- read_xlsx("DM_YF_Antibodies_D0D28.xlsx")
 
-#Choose only relevant coloumn in antibody
+#Choose only relevant column in antibody
 antibodies_raw_1 <- antibodies_raw[, c("ParticipantID", "day_abs_num2", "PRNT50", "logPRNT50")]
 antibodies_raw_1 <- antibodies_raw_1 %>% rename("VisitID" = "day_abs_num2") %>% arrange(VisitID)
 
@@ -64,7 +58,7 @@ table(genes_no0)
 raw_genes_no0 <- dplyr::filter(raw_genes, genes_no0)
 dim(raw_genes_no0)
 
-# Calculate CPM
+#Calculate CPM
 
 mycpmfun <- function(x) {
   return((x/sum(x)) * 10^6)
@@ -75,7 +69,7 @@ raw_genes_no0_cpm2p <- dplyr::filter(raw_genes_no0, rowSums(cpm > 2) >= 5)
 dim(raw_genes_no0_cpm2p)
 
 
-# Compute TMM Normalization
+#Compute TMM Normalization
 
 raw_count_DGE <- DGEList(counts = select(raw_genes_no0_cpm2p, -starts_with("Genes")),
                         genes = select(raw_genes_no0_cpm2p,
@@ -87,34 +81,42 @@ raw_count_DGE_normfact_TMMlog2cpm <- edgeR::cpm(raw_count_DGE_normfact, log = TR
 ```
 
 
-### Preparing data frame for PCA
+# Creating PCA Matrix 
 ```{r}
-
-#rename the column names to match the sample name in the metadata
+#Rename the column names to match the sample name in the metadata
 name1 <- colnames(raw_count_DGE_normfact_TMMlog2cpm)
 name1 <- chartr(".","-",name1)
 name1 <- gsub("X","",name1)
 name1
 colnames(raw_count_DGE_normfact_TMMlog2cpm) <- name1
 
-# transposing data frame
+#Add genes back to df and make the row names 
 normdata<- as.data.frame(raw_count_DGE_normfact_TMMlog2cpm)
+row_names <- raw_genes_no0_cpm2p$Genes
+rownames(normdata) <- row_names
+
+#Standardizing data
 standardized_normdata<- scale(normdata, center = TRUE, scale = TRUE)
 
 mean(standardized_normdata)
 sd(standardized_normdata)
 
-#transpose matrix so that each row is a sample (d0, d1, d3 or d28 for each patient) and each column represent a variable (gene expression and antibody titers)
+#Transpose matrix so that each row is a sample (d0, d1, d3 or d28 for each patient) and each column represent a variable (gene expression and antibody titers)
 standardized_normdata <- t(standardized_normdata)
 dim(standardized_normdata)
 
+  
 
+#calculating the correlation matrix from the normalized data. In this matrix each element (gene) corresponds to the covariance between variables Gene(i) vs Gene(j).
+#corr_matrix <- cor(raw_count_DGE_normfact_TMMlog2cpm)
+#ggcorrplot(corr_matrix, colors = c("#6D9EC1", "white","#E46726"))
+
+
+# temporarily adding sample names back into data frame
 df_PCA <- standardized_normdata
   class(df_PCA)
-  df_PCA <- as.data.frame(df_PCA) # changing class
+df_PCA <- as.data.frame(df_PCA) # changing class
   
-  
-# temporarily adding sample names back into data frame
 sample_names<-rownames(df_PCA)
 class(sample_names)
 df_PCA$sampleID <- sample_names
@@ -126,54 +128,118 @@ df_particpant_IDs <- metadata
 
 
 # temporarily adding participant IDs into data frame
-df_PCA<-left_join(df_PCA, df_particpant_IDs, by = "sampleID")
+df_PCA_1 <-left_join(df_PCA, df_particpant_IDs, by = "sampleID")
 
-df_PCA <- df_PCA %>%
+df_PCA_1 <- df_PCA_1 %>%
   select(sampleID, ParticipantID, VisitID, everything())
+
+row_names <- df_PCA$sampleID
+rownames(df_PCA_1) <- row_names
 
 
 # Adding day 28 antibody percentage to data frame (repeating d28 antibody values for all 4 observations of 1 participant)
-df_antibody <-antibodies_raw_1 %>% filter(VisitID==28) %>% select(ParticipantID, logPRNT50)
+df_antibody <-antibodies_raw_1 %>% filter(VisitID==28) %>% select(ParticipantID, logPRNT50, PRNT50)
 colnames(df_antibody)[2]<-"d28logPRNT50"
+colnames(df_antibody)[3]<-"d28PRNT50"
 
-df_PCA<-left_join(df_PCA, df_antibody, by = "ParticipantID")
+df_PCA_2<-left_join(df_PCA_1, df_antibody, by = "ParticipantID")
 
+df_PCA_2 <- df_PCA_2 %>%
+  select(sampleID, ParticipantID, VisitID, d28logPRNT50, d28PRNT50, everything())
 
-df_PCA <- df_PCA %>%
-  select(sampleID, ParticipantID, VisitID, d28logPRNT50, everything())
+row_names <- df_PCA$sampleID
+rownames(df_PCA_2) <- row_names
+
+#Change row names to match our normalized names 
+
+new_row_names <- character(0)
+
+for (p in 1:18) {
+  for (d in c(0, 1, 3, 28)) {
+    new_row_names <- c(new_row_names, paste0("P", p, ".D", d))
+  }
+}
+
+rownames(df_PCA_2) <- new_row_names
 
 #Create data frames with just days and just antibodies 
 
-df_PCA_antibody <- df_PCA %>% select(-sampleID,   -ParticipantID, -VisitID)
-df_PCA_days <- df_PCA %>% select(-sampleID,   -ParticipantID, -d28logPRNT50)
+df_PCA_antibody <- df_PCA_2 %>% select(-sampleID,   -ParticipantID, -VisitID, -d28logPRNT50)
+df_PCA_antibody_log <- df_PCA_2 %>% select(-sampleID,   -ParticipantID, -VisitID, -d28PRNT50)
+df_PCA_days <- df_PCA_2 %>% select(-sampleID,   -ParticipantID, -d28logPRNT50)
 
 ```
 
-# Antibody percentage
+# Antibody percentage using PRNT50 as supplementary 
 ```{r}
-normPCA_antibody <- PCA(df_PCA_antibody, quanti.sup = which(names(df_PCA_antibody) == "d28logPRNT50"))
+normPCA_antibody <- PCA(df_PCA_antibody, quanti.sup = which(names(df_PCA_antibody) == "d28PRNT50"))
 
+#Plot of individuals- Shows which individuals are alike in terms of genes
+#keeping names of variables 
+plot_names <- plot(normPCA_antibody, choix = "ind", label = "ind", habillage = which(names(df_PCA_antibody) ==
+    "d28PRNT50"), repel = TRUE)
+plot_names
 
-plot(normPCA_antibody, choix = "ind", label = "none", habillage = which(names(df_PCA_antibody) ==
-    "d28logPRNT50"), legend.title = "Percentage")
+#plotting without names
+plot_nonames <- plot(normPCA_antibody, choix = "ind", label = "none", habillage = which(names(df_PCA_antibody) ==
+    "d28PRNT50"), repel = TRUE)
+plot_nonames
 
+#Variable point of view - summarizes the correlation between variables and identifies the groups of correlated variables 
+plot(normPCA_antibody, choix = "var", label= "none")
+
+#Plot the eigenvalues graphe and illustrate the Kaiser with red line 
 plot(normPCA_antibody$eig[, "eigenvalue"], type = "b", ylab = "Eigenvalue")
 abline(h = mean(normPCA_antibody$eig[, "eigenvalue"]), col = "red", lty = "dotted", lwd = 2) 
 
-#Kaiser Criterion: Red line shows the PCs that account for more variability than others - showing the first 8 are important in our analysis 
-#Catell Criterion: Choosing all those at the elbow - 7
+sum(normPCA_antibody$eig[,"eigenvalue"] > mean(normPCA_antibody$eig[,"eigenvalue"]))
+#Kaiser Criterion: Red line shows the PCs that account for more variability than others - showing the first 9 are important in our analysis 
+
+#Catell Criterion: Choosing all those up to the elbow - 7
+```
+
+# Antibody percentage using logPRNT50 as a supplementary variable 
+```{r}
+normPCA_antibody_log <- PCA(df_PCA_antibody_log, quanti.sup = which(names(df_PCA_antibody_log) == "d28logPRNT50"))
+
+#Plot of individuals- Shows which individuals are alike in terms of genes
+log_plot <- plot(normPCA_antibody_log, choix = "ind", label = "ind", habillage = which(names(df_PCA_antibody_log) ==
+    "d28logPRNT50"), repel = TRUE)
+log_plot
+
+#Variable point of view - summarizes the correlation between variables and identifies the groups of correlated variables 
+plot(normPCA_antibody_log, choix = "var", axes = 2:3)
+
+plot(normPCA_antibody_log$eig[, "eigenvalue"], type = "b", 
+     main = "Scree Plot",
+     ylab = "Eigenvalue (variability)",
+     xlab = "Principal Component Order")
+abline(h = mean(normPCA_antibody_log$eig[, "eigenvalue"]), col = "red", lty = "dotted", lwd = 2) 
+
+#Catell Criterion calculation = 9 
+sum(normPCA_antibody$eig[,"eigenvalue"] > mean(normPCA_antibody$eig[,"eigenvalue"]))
+
+#Kaiser: Red line shows the PCs that account for more variability than others - showing the first 7/8 are important in our analysis 
+
 ```
 
 # Visit ID 
-
 ```{r}
 df_PCA_days <- df_PCA_days %>%select(everything(), VisitID)
+df_PCA_days$VisitID <- as.numeric(df_PCA_days$VisitID)
+
+class(df_PCA_days$VisitID)
 
 
 normPCA_days <- PCA(df_PCA_days, quali.sup = which(names(df_PCA_days) == "VisitID"))
 plot(normPCA_days, choix = "ind", label = "none", habillage = which(names(df_PCA_days) ==
     "VisitID"))
 
+
 plot(normPCA_days$eig[, "eigenvalue"], type = "b", ylab = "Eigenvalue")
 abline(h = mean(normPCA_days$eig[, "eigenvalue"]), col = "red", lty = "dotted", lwd = 2) 
 ```
+
+
+```
+
