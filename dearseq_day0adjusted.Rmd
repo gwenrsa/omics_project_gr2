@@ -6,9 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-library(readxl)
 library(dplyr)
-library(limma)
 if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 
@@ -30,27 +28,27 @@ dim(rawcounts)
 rawcounts <- select(rawcounts, c("Genes", all_of(sampleIDs)))
 dim(rawcounts)
 #removes 13 columns, now have 72 samples (4 for each participant) and 1 column with gene name
-
-#calculating cpm
-mycpmfun <- function(x) { 
-  return((x/sum(x))*10^6)
-}
-cpm <-apply(select(rawcounts_no0, -1), MARGIN = 2, FUN = mycpmfun)
 ```
 
-
+Remove genes with 0 observations in all samples (n=6,289)
 ```{r}
 #remove genes with 0 observations in all samples
 gene_no0 <- rowSums(select(rawcounts, -1)) >0
 rawcounts_no0 <- filter(rawcounts, gene_no0)
 dim(rawcounts_no0)
 #removes 6,289 genes with all zeros
+```
 
+Normalizing the day 1 genes
+```{r norm1}
 library(edgeR)
 genesDGE <- DGEList(counts = select(rawcounts_no0, -1), samples = metadata, genes = select(rawcounts_no0, 1))
 genes_normfact <- edgeR::calcNormFactors(genesDGE, method = "TMM")
 normfact_no0_cpm2p_TMMlog2cpm <- edgeR::cpm(genes_normfact, log = T)
+```
 
+Creating the design matrix for normalized day 1 genes
+```{r design1norm}
 genesDay1_normfact <- genes_normfact[,metadata$VisitID==1]
 design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay1_normfact$samples))
 samplesDay1 <- metadata %>% 
@@ -59,11 +57,22 @@ samplesDay1 <- samplesDay1$SampleID
 design_day1 <- design %>% filter(row.names(design) %in% samplesDay1)
 design_day1 <- design_day1 %>% 
   as.matrix()
+```
 
+Running dearSeq on day 1 normalized genes
+```{r dearseq1norm}
 res_dearseq1_a <- dearseq::dear_seq(exprmat=genesDay1_normfact$counts, variables2test = design_day1[,"LogPRNT50_Day28", drop = F], covariates = design_day1[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = T)
 summary(res_dearseq1_a)
+```
 
+Leaving genes non-normalized for dearseq to normalize
+```{r desgin1}
+genesDGE <- DGEList(counts = select(rawcounts_no0, -1), samples = metadata, genes = select(rawcounts_no0, 1))
 genesDay1 <- genesDGE[, metadata$VisitID==1]
+```
+
+Creating the design matrix of non-normalized day 1 genes
+```{r}
 design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay1$samples))
 samplesDay1 <- metadata %>% 
   filter(VisitID ==1)
@@ -71,14 +80,24 @@ samplesDay1 <- samplesDay1$SampleID
 design_day1 <- design %>% filter(row.names(design) %in% samplesDay1)
 design_day1 <- design_day1 %>% 
   as.matrix()
+```
 
+Running dearseq on day 1 non-normalized genes
+```{r dearseq1}
 res_dearseq1_b <- dearseq::dear_seq(exprmat=genesDay1$counts, variables2test = design_day1[,"LogPRNT50_Day28", drop = F], covariates = design_day1[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = F)
 summary(res_dearseq1_b)
 ```
 
 ### Day 3
-```{r}
+Taking day 3 normalized genes
+```{r norm3}
+genesDGE <- DGEList(counts = select(rawcounts_no0, -1), samples = metadata, genes = select(rawcounts_no0, 1))
+genes_normfact <- edgeR::calcNormFactors(genesDGE, method = "TMM")
 genesDay3_normfact <- genes_normfact[,metadata$VisitID==3]
+```
+
+Making the design matrix with day 3 normalized genes
+```{r design3norm}
 design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay3_normfact$samples))
 samplesDay3 <- metadata %>% 
   filter(VisitID ==3)
@@ -86,13 +105,24 @@ samplesDay3 <- samplesDay3$SampleID
 design_day3 <- design %>% filter(row.names(design) %in% samplesDay3)
 design_day3 <- design_day3 %>% 
   as.matrix()
+```
 
+Running dearseq for day 3 normalized genes
+```{r}
 res_dearseq3_a <- dearseq::dear_seq(exprmat=genesDay3_normfact$counts, variables2test = design_day3[,"LogPRNT50_Day28", drop = F], covariates = design_day3[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = T)
 summary(res_dearseq3_a)
 plot(res_dearseq3_a)
 #0 genes
+```
 
+Repeating on non-normalized day 3 genes
+```{r}
+genesDGE <- DGEList(counts = select(rawcounts_no0, -1), samples = metadata, genes = select(rawcounts_no0, 1))
 genesDay3 <- genesDGE[, metadata$VisitID==3]
+```
+
+Creating design matrix for day 3 genes non-normalized
+```{r}
 design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay3$samples))
 samplesDay3 <- metadata %>% 
   filter(VisitID ==3)
@@ -100,15 +130,27 @@ samplesDay3 <- samplesDay3$SampleID
 design_day3 <- design %>% filter(row.names(design) %in% samplesDay3)
 design_day3 <- design_day3 %>% 
   as.matrix()
+```
 
+Running dearseq for day 3 non-normalized genes
+```{r }
 res_dearseq3_b <- dearseq::dear_seq(exprmat=genesDay3$counts, variables2test = design_day3[,"LogPRNT50_Day28", drop = F], covariates = design_day3[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = F)
 summary(res_dearseq3_b)
 plot(res_dearseq3_b)
 #0 genes
 ```
-### Day 1 and 3
+
+
+### Day 1 and 3 combined
+taking normalized genes on day 1 and 3
 ```{r}
+genesDGE <- DGEList(counts = select(rawcounts_no0, -1), samples = metadata, genes = select(rawcounts_no0, 1))
+genes_normfact <- edgeR::calcNormFactors(genesDGE, method = "TMM")
 genesDay13_normfact <- genes_normfact[,metadata$VisitID %in% c(1, 3)]
+```
+
+Creating the design matrix for normalized day 1 and day 3 genes
+```{r}
 design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay13_normfact$samples))
 samplesDay13 <- metadata %>% 
   filter(VisitID ==3 | VisitID == 1)
@@ -116,13 +158,24 @@ samplesDay13 <- samplesDay13$SampleID
 design_day13 <- design %>% filter(row.names(design) %in% samplesDay13)
 design_day13 <- design_day13 %>% 
   as.matrix()
+```
 
+Running dearseq on day 1 and 3 normalized genes
+```{r}
 res_dearseq13_a <- dearseq::dear_seq(exprmat=genesDay13_normfact$counts, variables2test = design_day13[,"LogPRNT50_Day28", drop = F], covariates = design_day13[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = T)
 summary(res_dearseq13_a)
 plot(res_dearseq13_a)
 #0 genes
+```
 
+Subsetting the non-normalized genes
+```{r}
+genesDGE <- DGEList(counts = select(rawcounts_no0, -1), samples = metadata, genes = select(rawcounts_no0, 1))
 genesDay13 <- genesDGE[, metadata$VisitID %in% c(1,3)]
+```
+
+creating the design matrix of non-normalized day 1 and day 3 genes
+```{r}
 design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay13$samples))
 samplesDay13 <- metadata %>% 
   filter(VisitID ==3 | VisitID==1)
@@ -130,9 +183,12 @@ samplesDay13 <- samplesDay13$SampleID
 design_day13 <- design %>% filter(row.names(design) %in% samplesDay13)
 design_day13 <- design_day13 %>% 
   as.matrix()
+```
 
+```{r}
 res_dearseq13_b <- dearseq::dear_seq(exprmat=genesDay13$counts, variables2test = design_day13[,"LogPRNT50_Day28", drop = F], covariates = design_day13[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = F)
 summary(res_dearseq13_b)
+plot(res_dearseq13_b)
 #0 genes
 ```
 
