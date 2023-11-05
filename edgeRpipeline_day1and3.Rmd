@@ -1,0 +1,107 @@
+---
+title: "edgeR pipeline"
+author: "Madeleine"
+date: "2023-11-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("dearseq")
+setwd("~/Documents/OMICS/Project")
+load("metadata.rdata")
+sampleIDs <- metadata$SampleID
+rawcounts <- read.csv("DM_raw-counts_transposed.csv") 
+genes <- rawcounts$Genes
+rownames(rawcounts) <- genes
+
+#rename columns to match metadata
+name1 <- colnames(rawcounts[, -1])
+name1 <- chartr(".", "-", name1)
+name1 <- gsub("X", "", name1)
+colnames(rawcounts) <- c("Genes", name1)
+dim(rawcounts)
+
+#select columns that are in our metadata
+rawcounts <- select(rawcounts, c("Genes", all_of(sampleIDs)))
+dim(rawcounts)
+#removes 13 columns, now have 72 samples (4 for each participant) and 1 column with gene name
+```
+
+Remove genes with 0 observations in all samples (n=6,289)
+```{r}
+#remove genes with 0 observations in all samples
+gene_no0 <- rowSums(select(rawcounts, -1)) >0
+rawcounts_no0 <- filter(rawcounts, gene_no0)
+dim(rawcounts_no0)
+#removes 6,289 genes with all zeros
+```
+
+Normalizing the day 1 genes
+```{r norm1}
+library(edgeR)
+genesDGE <- DGEList(counts = select(rawcounts_no0, -1), samples = metadata, genes = select(rawcounts_no0, 1))
+genes_normfact <- edgeR::calcNormFactors(genesDGE, method = "TMM")
+genesDay1_normfact <- genes_normfact[,metadata$VisitID==1]
+#normfact_no0_cpm2p_TMMlog2cpm <- edgeR::cpm(genes_normfact, log = T)
+```
+
+```{r}
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay1_normfact$samples))
+samplesDay1 <- metadata %>% 
+  filter(VisitID ==1)
+samplesDay1 <- samplesDay1$SampleID
+design_day1 <- design %>% filter(row.names(design) %in% samplesDay1)
+design_day1 <- design_day1 %>% 
+  as.matrix()
+
+```
+
+add common dispertion estimate to DGE OBJECT
+```{r}
+genesDay1_normfact_commondisp <- edgeR::estimateCommonDisp(genesDay1_normfact)
+fit1 <- glmFit(y = genesDay1_normfact_commondisp, design = design_day1)
+lrt1 <- glmLRT(glmfit = fit1, coef =2)
+signif1_edgeR <- decideTestsDGE(lrt1, adjust.method = "BH", p.value = 0.05, lfc = 1)
+summary(signif1_edgeR)
+genelist1_edgeR <- genesDay1_normfact_commondisp$genes$Genes[as.logical(signif1_edgeR)]
+genelist1_df <- data.frame(genelist1_edgeR)
+```
+
+Repeat for day 3
+
+```{r}
+genesDay3_normfact <- genes_normfact[,metadata$VisitID==3]
+#normfact_no0_cpm2p_TMMlog2cpm <- edgeR::cpm(genes_normfact, log = T)
+```
+
+```{r}
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay3_normfact$samples))
+samplesDay3 <- metadata %>% 
+  filter(VisitID ==3)
+samplesDay3 <- samplesDay3$SampleID
+design_day3 <- design %>% filter(row.names(design) %in% samplesDay3)
+design_day3 <- design_day3 %>% 
+  as.matrix()
+
+```
+
+add common dispertion estimate to DGE OBJECT
+```{r}
+genesDay3_normfact_commondisp <- edgeR::estimateCommonDisp(genesDay3_normfact)
+fit3 <- glmFit(y = genesDay3_normfact_commondisp, design = design_day3)
+lrt3 <- glmLRT(glmfit = fit3, coef =2)
+signif3_edgeR <- decideTestsDGE(lrt3, adjust.method = "BH", p.value = 0.05, lfc = 1)
+summary(signif3_edgeR)
+genelist3_edgeR <- genesDay3_normfact_commondisp$genes$Genes[as.logical(signif3_edgeR)]
+genelist3_df <- data.frame(genelist3_edgeR)
+```
+
+```{r}
+library(writexl)
+write_xlsx(genelist1_df, "genelist_Day1.xlsx")
+write_xlsx(genelist3_df, "genelist_Day3.xlsx")
+```
