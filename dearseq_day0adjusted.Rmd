@@ -162,7 +162,7 @@ design_day13 <- design_day13 %>%
 
 Running dearseq on day 1 and 3 normalized genes
 ```{r}
-res_dearseq13_a <- dearseq::dear_seq(exprmat=genesDay13_normfact$counts, variables2test = design_day13[,"LogPRNT50_Day28", drop = F], covariates = design_day13[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = T)
+res_dearseq13_a <- dearseq::dear_seq(exprmat=genesDay13_normfact$counts, variables2test = design_day13[,"LogPRNT50_Day28", drop = F], covariates = design_day13[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", sample_group = rep(1:18, each = 2), preprocessed = T)
 summary(res_dearseq13_a)
 plot(res_dearseq13_a)
 #0 genes
@@ -186,7 +186,7 @@ design_day13 <- design_day13 %>%
 ```
 
 ```{r}
-res_dearseq13_b <- dearseq::dear_seq(exprmat=genesDay13$counts, variables2test = design_day13[,"LogPRNT50_Day28", drop = F], covariates = design_day13[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = F)
+res_dearseq13_b <- dearseq::dear_seq(exprmat=genesDay13$counts, variables2test = design_day13[,"LogPRNT50_Day28", drop = F], covariates = design_day13[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", sample_group = rep(1:18, each = 2), preprocessed = F)
 summary(res_dearseq13_b)
 plot(res_dearseq13_b)
 #0 genes
