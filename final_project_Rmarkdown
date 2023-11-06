@@ -195,6 +195,20 @@ legend("topright", title = "Day", legend = levels(metadata$VisitID),
 ### Differential Expression Analysis
 
 ```{r}
+genesDay1_3_normfact <- raw_count_DGE_normfact[,metadata$VisitID %in% c(1, 3)]
+design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay1_3_normfact$samples))
+samplesDay13 <- metadata %>% 
+  filter(VisitID ==3 | VisitID == 1)
+samplesDay13 <- samplesDay13$SampleID
+design_day13 <- design %>% filter(row.names(design) %in% samplesDay13)
+design_day13 <- design_day13 %>% 
+  as.matrix()
+set.seed(100)
+res_dearseq <- dearseq::dear_seq(exprmat=genesDay1_3_normfact$counts, variables2test = design_day13[,"LogPRNT50_Day28", drop = F], covariates = design_day13[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "asymptotic", preprocessed = T, sample_group = rep(1:2, each = 18))
+summary(res_dearseq)
+plot(res_dearseq)
+dearseq_signif <- res_dearseq$pvals$adjPval<0.05
+geneList_13<- genesDay1_3_normfact$genes$Genes[as.logical(dearseq_signif)]
 
 ```
 
