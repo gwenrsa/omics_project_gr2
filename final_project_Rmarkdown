@@ -19,6 +19,32 @@ Dr. Laura Richter, Dr. Boris Hejblum, and Dr. Fleur Mougin
 
 Note: for the plots, please use dev.off() prior to plotting if there are issues. Additionally, for the CIM heatmap plots in the sPLS section, please ensure the plotting window is large enough. 
 
+### Preparing Antibody and metadata
+```{r}
+antibodyValues <- read_excel("YF_Antibodies_D0D28 Results.xlsx") %>% 
+  select(c("Participant ID", "PRNT50", "Log PRNT50","Day Abs Num2"))
+antibodyValues<- dplyr::rename(antibodyValues, VisitID = "Day Abs Num2", ParticipantID = "Participant ID", logPRNT50 = "Log PRNT50") 
+participants <- unique(antibodyValues$ParticipantID)
+
+antibodyValues_wide <- antibodyValues %>% 
+  pivot_wider(id_cols=c("ParticipantID"), names_from = VisitID, values_from = c("PRNT50", "logPRNT50")) %>% 
+  rename(PRNT50_Day0 = "PRNT50_0", PRNT50_Day28 = "PRNT50_28", LogPRNT50_Day0 = "logPRNT50_0", LogPRNT50_Day28 = "logPRNT50_28")
+antibodyValues_wide$logFold <- antibodyValues_wide$LogPRNT50_Day28 - antibodyValues_wide$LogPRNT50_Day0
+
+antibodyState <- antibodyValues_wide %>% 
+  select(c(ParticipantID, LogPRNT50_Day28, LogPRNT50_Day0, logFold))
+
+metadata <- read_excel("DM_YF_metadata.xlsx") %>% 
+  dplyr::filter(ParticipantID %in% participants) %>% 
+  dplyr::select(c("ParticipantID", "VisitID", "Sample name sample sheet")) %>% 
+  dplyr::rename(SampleID = "Sample name sample sheet")
+metadata$VisitID <- as.numeric(metadata$VisitID)
+metadata$VisitID[metadata$VisitID>28] = 28 
+metadata$VisitID[metadata$VisitID==4] = 3
+metadata <- left_join(metadata, antibodyState, by = join_by("ParticipantID"))
+```
+
+
 ### Sample Description
 
 #### Loading Data and Packages
@@ -38,8 +64,6 @@ library(pls) # for partial least squares regression
 # Reading Data
 setwd("~/Desktop/OMICS project/omics_project_gr2") # set working directory
 raw_genes <- read.csv("DM_raw-counts_transposed.csv")
-metadata <- read_xlsx("metadata_complete_oct18.xlsx")
-DM_YF_Antibodies_D0D28 <- read_excel("DM_YF_Antibodies_D0D28.xlsx")
 ```
 
 #### Formatting Data
@@ -218,15 +242,15 @@ geneList_13<- genesDay1_3_normfact$genes$Genes[as.logical(dearseq_signif)]
 # Prepare Data
 gene_expression_D1 <- normfact_TMM_log2cpm_counts[ , seq(2, ncol(normfact_TMM_log2cpm_counts), by = 4)] # select D1 gene expression from TMM-normalized log2cpm gene counts
 
-antibodies_D0 <- as.data.frame(DM_YF_Antibodies_D0D28) %>% # select antibody levels on D0
-  filter (day_abs == "J0") %>% # to compute logfold change further down
+antibodies_D0 <- metadata %>% # select antibody levels on D0
+  filter (VisitID == 0) %>% # to compute logfold change further down
   dplyr::select (PRNT50, logPRNT50)
 
-antibodies_D28 <- as.data.frame(DM_YF_Antibodies_D0D28) %>% # select antibody levels on D28
-  filter (day_abs == "J28") %>%
+antibodies_D28 <- metadata %>% # select antibody levels on D28
+  filter (VisitID== 28) %>%
   dplyr::select (PRNT50, logPRNT50)
 
-logfold_change <- antibodies_D28$logPRNT50 - antibodies_D0$logPRNT50 # compute logfold change
+logfold_change <- metadata$logFold # compute logfold change
   
 new_row_names <- character(0) # rename columns as 'participant'.'day' for easier reading
 for (p in 1:18) {
