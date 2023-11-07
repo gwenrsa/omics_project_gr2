@@ -105,33 +105,42 @@ dim(standardized_normdata)
   
 
 #Calculating the correlation matrix from the normalized data
+#library(corrplot)
 #corr_matrix <- cor(raw_count_DGE_normfact_TMMlog2cpm)
 #ggcorrplot(corr_matrix, colors = c("#6D9EC1", "white","#E46726"))
+
+#?ggcorrplot
+
 
 
 #Creating data frame with sampleID, Participant ID and Visit ID columns 
 pca_data <- as.data.frame(standardized_normdata)
 pca_data$sampleID <- rownames(pca_data)
 pca_data <- pca_data %>% select(sampleID, everything())
-df_particpant_IDs <- metadata
+particpant_IDs <- metadata
 
-pca_data <- left_join(pca_data, df_particpant_IDs, by = "sampleID") %>%
+pca_data <- left_join(pca_data, particpant_IDs, by = "sampleID") %>%
   select(sampleID, ParticipantID, VisitID, everything()) %>%
   `rownames<-`(pca_data$sampleID)
 
 
 # Adding day 28 antibody percentage to data frame (repeating d28 antibody values for all 4 observations of 1 participant)
-df_antibody <- antibodies_raw_1 %>%
+antibody_data <- antibodies_raw_1 %>%
   filter(VisitID == 28) %>%
   select(ParticipantID, d28logPRNT50 = logPRNT50, d28PRNT50 = PRNT50)
 
-pca_data <- left_join(pca_data, df_antibody, by = "ParticipantID") %>%
+pca_data <- left_join(pca_data, antibody_data, by = "ParticipantID") %>%
   select(sampleID, ParticipantID, VisitID, d28logPRNT50, d28PRNT50, everything()) %>%
   `rownames<-`(pca_data$sampleID)
 
 #Change row names to match our normalized names 
 
-new_row_names <- with(expand.grid(ParticipantID = 1:18, VisitID = c(0, 1, 3, 28)), paste0("P", ParticipantID, ".D", VisitID))
+new_row_names <- character(0) 
+for (p in 1:18) {
+  for (d in c(0, 1, 3, 28)) {
+    new_row_names <- c(new_row_names, paste0("P", p, ".D", d))
+  }
+}
 rownames(pca_data) <- new_row_names
 
 #Create data frames with just days and just antibodies 
@@ -148,37 +157,6 @@ PCA1<- PCA(pca_data[,-(1:4)])
 plot(PCA1, choix = "ind", label = "none")
 ```
 
-# Calculate Eigenvalues
-```{r}
-plot(pca_antibody_log$eig[, "eigenvalue"], type = "b", 
-     main = "Scree Plot",
-     ylab = "Eigenvalue (variability)",
-     xlab = "Principal Component Order")
-abline(h = mean(pca_antibody_log$eig[, "eigenvalue"]), col = "red", lty = "dotted", lwd = 2) 
-
-#Kaiser Calculation = 9 (most important to our analysis)
-sum(pca_antibody$eig[,"eigenvalue"] > mean(pca_antibody$eig[,"eigenvalue"]))
-```
-
-# PCA using PRNT50 as supplementary 
-```{r}
-pca_antibody <- PCA(pca_data_antibody, quanti.sup = which(names(pca_data_antibody) == "d28PRNT50"))
-
-#Plot of individuals- Shows which individuals are alike in terms of genes
-#keeping names of variables 
-plot_names <- plot(pca_antibody, choix = "ind", label = "ind", habillage = which(names(pca_data_antibody) ==
-    "d28PRNT50"), repel = TRUE)
-plot_names
-
-#plotting without names
-plot_nonames <- plot(pca_antibody, choix = "ind", label = "none", habillage = which(names(pca_data_antibody) ==
-    "d28PRNT50"), repel = TRUE)
-plot_nonames
-
-#Variable point of view - summarizes the correlation between variables and identifies the groups of correlated variables 
-plot(pca_antibody, choix = "var", label= "none")
-```
-
 # PCA using logPRNT50 as a supplementary variable 
 ```{r}
 pca_antibody_log <- PCA(pca_data_antibody_log, quanti.sup = which(names(pca_data_antibody_log) == "d28logPRNT50"))
@@ -188,24 +166,41 @@ log_plot <- plot(pca_antibody_log, choix = "ind", label = "none", habillage = wh
     "d28logPRNT50"), repel = TRUE)
 log_plot
 
-#Plot of individuals- Shows which individuals are alike in terms of genes
-log_plot_name <- plot(pca_antibody_log, choix = "ind", label = "ind", habillage = which(names(pca_data_antibody_log) ==
+#Plot with sample labels for first 2 PCs 
+log_plot_name <- plot(pca_antibody_log, axes = c(1,2), choix = "ind", label = "ind", habillage = which(names(pca_data_antibody_log) ==
     "d28logPRNT50"), repel = TRUE)
 log_plot_name
+
+log_plot_name2 <- plot(pca_antibody_log, axes = c(3,4), choix = "ind", label = "ind", habillage = which(names(pca_data_antibody_log) ==
+    "d28logPRNT50"), repel = TRUE)
+log_plot_name2 #using PC 3&4 we see even more heterogeneity between samples and no clear clusters across either PC 
 
 #Variable point of view - summarizes the correlation between variables and identifies the groups of correlated variables 
 plot(pca_antibody_log, choix = "var", axes = 2:3)
 ```
 
+# Calculate Eigenvalues
+```{r}
+class(pca_antibody)
+
+plot(pca_antibody_log$eig[, "eigenvalue"], type = "b", 
+     main = "Scree Plot of PCA on All Normalized Genes",
+     ylab = "Eigenvalue (variability)",
+     xlab = "Principal Component Order")
+abline(h = mean(pca_antibody_log$eig[, "eigenvalue"]), col = "red", lty = "dotted", lwd = 2) #because antibody response and days are supplementary it doesn't matter which data we use here as they have no influence on the PCA itself 
+
+#Kaiser Calculation = 9 (most important to our analysis)
+sum(pca_antibody_log$eig[,"eigenvalue"] > mean(pca_antibody_log$eig[,"eigenvalue"]))
+```
+
 # PCA with Visit ID as supplementary
 ```{r}
-PCA_days <- PCA(pca_data_days, quali.sup = which(names(pca_data_days) == "VisitID"))
-VisitID_plot <- plot(=PCA_days, choix = "ind", habillage = which(names(pca_data_days) ==
+pca_days <- PCA(pca_data_days, quali.sup = which(names(pca_data_days) == "VisitID"))
+VisitID_plot <- plot(PCA_days, choix = "ind", label = "none", habillage = which(names(pca_data_days) ==
     "VisitID"))
 VisitID_plot
 class(pca_data_days$VisitID)
 ```
-
 
 ```
 
