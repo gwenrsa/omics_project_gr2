@@ -244,13 +244,11 @@ X <- spls_df %>% dplyr::select(-D28_logPRNT50) # explanatory matrix as gene expr
 lm_results <- lm(antibodies_D28$logPRNT50~antibodies_D0$logPRNT50) # taking residuals of D28 antibodies regressed on D0 antibodies
 res <- lm_results$residuals
 Y1 <- as.vector(res) # outcome vector Ylog as logRPNT50 on D28
-r <- 10
+r <- 5 # determined from PLS that 5 is a good number of components to keep
 
 spls_log_D1D0 <- spls(X, Y1, ncomp = r, keepX = rep(5, r)) # fit sPLS model for logPRNT50
 
-spls_log_D1D0 <- spls(X, Y1, ncomp = r, keepX = rep(5, r))
-
-spls_log_D1D0_tune1 <- tune.spls(X, Y1, ncomp = 5, test.keepX = c(1:25), 
+spls_log_D1D0_tune1 <- tune.spls(X, Y1, ncomp = r, test.keepX = c(1:25), 
                               validation="Mfold", folds=10, nrepeat=20, 
                               measure = "R2", 
                               cpus=parallel::detectCores()-2)
@@ -259,8 +257,8 @@ plot(spls_log_D1D0_tune1)
 spls_log_D1D0_tune1$choice.keepX
 
 spls_log_D1D0_opt <- spls(X, Y1, 
-                          ncomp = ncomp_opt, 
-                          keepX = spls_log_D1D0_tune1$choice.keepX[1:ncomp_opt])
+                          ncomp = r, 
+                          keepX = spls_log_D1D0_tune1$choice.keepX[1:r])
 ```
 
 ```{r sPLS Plots}
@@ -322,7 +320,7 @@ legend1=list(legend = c(min(Y1), max(Y1)), # min and max Ylogchange
             cex = 0.7) # legend size
 
 cim(spls_log_D1D0_opt, title="D1 Gene expression and Day 28 LogPRNT50 (Adjusting for D0)",
-    margins = c(7, 5), legend = legend1)
+    margins = c(7, 5))
 ```
 
 ## (Sparse) Partial Least Squares Regression: Day 3 Gene Expression
@@ -343,8 +341,8 @@ plsr_model_log2_D3D0 <- plsr(D28_logPRNT50~.+antibodies_D0$logPRNT50, data=spls_
 summary(plsr_model_log2_D3D0) # using leave-one-out cross-validation
 
 validationplot(plsr_model_log_D3D0, main = "Cross-Validation: PLS for D3 Gene Expression and D28 logPRNT50 Adjusting for D0", xlab = "root mean-squared error (RMSE)")
-validationplot(plsr_model_log_D1D0, val.type="MSEP", main = "Cross-Validation: PLS for D3 Gene Expression and D28 logPRNT50 Adjusting for D0", xlab = "mean-squared error of prediciton (MSEP)") # plot for mean squared error of prediction
-validationplot(plsr_model_log_D1D0, val.type="R2", main = "Cross-Validation: PLS for D3 Gene Expression and D28 logPRNT50 Adjusting for D0") # plot for R2
+validationplot(plsr_model_log_D3D0, val.type="MSEP", main = "Cross-Validation: PLS for D3 Gene Expression and D28 logPRNT50 Adjusting for D0", xlab = "mean-squared error of prediciton (MSEP)") # plot for mean squared error of prediction
+validationplot(plsr_model_log_D3D0, val.type="R2", main = "Cross-Validation: PLS for D3 Gene Expression and D28 logPRNT50 Adjusting for D0") # plot for R2
 ```
 
 ```{r sPLS Models}
@@ -353,13 +351,11 @@ X <- spls_df_D3 %>% dplyr::select(-D28_logPRNT50) # explanatory matrix as gene e
 lm_results <- lm(antibodies_D28$logPRNT50~antibodies_D0$logPRNT50) # taking residuals of D28 antibodies regressed on D0 antibodies
 res <- lm_results$residuals
 Y2 <- as.vector(res) # outcome vector Ylog as logRPNT50 on D28
-r <- 10
-
-spls_log_D3D0 <- spls(X, Y2, ncomp = r, keepX = rep(5, r)) # fit sPLS model for logPRNT50
+r <- 5
 
 spls_log_D3D0 <- spls(X, Y2, ncomp = r, keepX = rep(5, r))
 
-spls_log_D3D0_tune1 <- tune.spls(X, Y2, ncomp = 5, test.keepX = c(1:25), 
+spls_log_D3D0_tune1 <- tune.spls(X, Y2, ncomp = r, test.keepX = c(1:25), 
                               validation="Mfold", folds=10, nrepeat=20, 
                               measure = "R2", 
                               cpus=parallel::detectCores()-2)
@@ -368,8 +364,8 @@ plot(spls_log_D3D0_tune1)
 spls_log_D3D0_tune1$choice.keepX
 
 spls_log_D3D0_opt <- spls(X, Y2, 
-                          ncomp = ncomp_opt, 
-                          keepX = spls_log_D3D0_tune1$choice.keepX[1:ncomp_opt])
+                          ncomp = r, 
+                          keepX = spls_log_D3D0_tune1$choice.keepX[1:r])
 ```
 
 ```{r sPLS Plots}
@@ -403,5 +399,5 @@ legend2=list(legend = c(min(Y2), max(Y2)), # min and max Y
             cex = 0.7) # legend size
 
 cim(spls_log_D3D0_opt, title="D3 Gene expression and Day 28 LogPRNT50 (Adjusting for D0)",
-    margins = c(7, 5), legend = legend2)
+    margins = c(7, 5))
 ```
