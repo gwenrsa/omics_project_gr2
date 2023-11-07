@@ -229,13 +229,7 @@ genes_normfact$counts <- edgeR::cpm(genes_normfact$counts, log = TRUE)
 colnames(genes_normfact$counts) <- metadata$SampleID
 rownames(genes_normfact$samples) <- metadata$SampleID
 genesDay1_normfact <- genes_normfact[,metadata$VisitID ==1]
-design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay1_normfact$samples))
-samplesDay1 <- metadata %>% 
-  filter(VisitID == 1)
-samplesDay1 <- samplesDay1$SampleID
-design_day1 <- design %>% filter(row.names(design) %in% samplesDay1)
-design_day1 <- design_day1 %>% 
-  as.matrix()
+design_day1 <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay1_normfact$samples)) %>% as.matrix()
 res_dearseq_1 <- dearseq::dear_seq(exprmat=genesDay1_normfact$counts, variables2test = design_day1[,"LogPRNT50_Day28", drop = F], covariates = design_day1[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = T)
 summary(res_dearseq_1)
 plot(res_dearseq_1)
@@ -244,13 +238,7 @@ plot(res_dearseq_1)
 Day 3
 ```{r}
 genesDay3_normfact <- genes_normfact[,metadata$VisitID ==3]
-design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay3_normfact$samples))
-samplesDay3 <- metadata %>% 
-  filter(VisitID == 3)
-samplesDay3 <- samplesDay3$SampleID
-design_day3 <- design %>% filter(row.names(design) %in% samplesDay3)
-design_day3 <- design_day3 %>% 
-  as.matrix()
+design_day3 <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay3_normfact$samples)) %>% as.matrix()
 res_dearseq_3 <- dearseq::dear_seq(exprmat=genesDay3_normfact$counts, variables2test = design_day3[,"LogPRNT50_Day28", drop = F], covariates = design_day3[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = T)
 summary(res_dearseq_3)
 plot(res_dearseq_3)
