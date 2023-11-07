@@ -1,0 +1,407 @@
+---
+title: "Omics Group 2 - Final Project"
+author: "Gwen Aubrac, Madeleine Gorman-Asal, Alisha Dziarski, Francesca Lee"
+date: "2023-11-08"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = TRUE, tidy = TRUE, error = TRUE)
+```
+
+# Association Between Early Gene Expression Signatures and Yellow Fever Vaccination Antibody Response
+
+Omics Group 2: Gwen Aubrac, Madeleine Gorman-Asal, Alisha Dziarski, Francesca Lee
+November 9th, 2023
+Dr. Laura Richter, Dr. Boris Hejblum, and Dr. Fleur Mougin
+
+Note: for the plots, please use dev.off() prior to plotting if there are issues. Additionally, for the CIM heatmap plots in the sPLS section, please ensure the plotting window is large enough. 
+
+### Sample Description
+
+#### Loading Data and Packages
+
+```{r}
+# Loading Required Packages
+library(dplyr) # for pipeline functions
+library(edgeR) # for gene normalization
+library(limma) # for differential expression analysis
+library(UpSetR) # for differential expression analysis
+library(flashClust) # for dendrogram plots
+library(dendextend) # for dendrogram plots
+library(readxl) # to read data
+library(mixOmics) # for partial least squares regression
+library(pls) # for partial least squares regression
+
+# Reading Data
+setwd("~/Desktop/OMICS project/omics_project_gr2") # set working directory
+raw_genes <- read.csv("DM_raw-counts_transposed.csv")
+metadata <- read_xlsx("metadata_complete_oct18.xlsx")
+DM_YF_Antibodies_D0D28 <- read_excel("DM_YF_Antibodies_D0D28.xlsx")
+```
+
+#### Formatting Data
+
+```{r}
+# Clean Participant Data
+raw_genes <- raw_genes %>% # remove observations from participants who were male (n=3) or had missing data for age (n=1)
+  dplyr::select (-X13.YF, -X14.YF, -X15.YF, -X16.YF, -X17.YF, -X18.YF, -X19.YF, -X20.YF,
+          -X41.YF, -X42.YF, -X43.YF, -X44.YF)
+           
+new_col_names <- character(0) # rename columns as 'participant'.'day' for easier reading
+for (p in 1:18) {
+  for (d in c(0, 1, 3, 28)) {
+    new_col_names <- c(new_col_names, paste0("P", p, ".D", d))
+  }
+}
+colnames(raw_genes)[2:73] <- new_col_names
+
+# Remove genes that were not observed
+genes_no0 <- rowSums(dplyr::select(raw_genes, -dplyr::starts_with("Genes"))) > 0
+table(genes_no0)
+
+raw_genes_no0 <- dplyr::filter(raw_genes, genes_no0)
+dim(raw_genes_no0)
+
+# Calculate CPM
+mycpmfun <- function(x) {
+  return((x/sum(x)) * 10^6)
+}
+cpm <- apply(dplyr::select(raw_genes_no0, -starts_with("Genes")), MARGIN = 2,
+             FUN = mycpmfun)
+
+raw_genes_no0_cpm2p <- dplyr::filter(raw_genes_no0, rowSums(cpm > 2) >= 5) # replaced by 0 to remove filtering condition otherwise 2 and 5
+dim(raw_genes_no0_cpm2p)
+
+# Compute TMM Normalization
+raw_count_DGE <- DGEList(counts = dplyr::select(raw_genes_no0_cpm2p, -starts_with("Genes")),
+                        genes = dplyr::select(raw_genes_no0_cpm2p,
+                                                                  starts_with("Genes")))
+raw_count_DGE_normfact <- edgeR::calcNormFactors(raw_count_DGE, method = "TMM")
+
+raw_count_DGE_normfact_TMMlog2cpm <- edgeR::cpm(raw_count_DGE_normfact, log = TRUE)
+
+# Merge DGE back with Gene Name Column
+normfact_TMM_log2cpm_counts <- as.data.frame(raw_count_DGE_normfact_TMMlog2cpm)
+row_names <- raw_genes_no0_cpm2p$Genes
+rownames(normfact_TMM_log2cpm_counts) <- row_names
+save(normfact_TMM_log2cpm_counts, file = 'normfact_TMM_log2cpm_counts.Rdata')
+```
+
+#### Sample Characteristics
+
+```{r}
+# Gene Counts Plot: Log2CPM
+metadata$VisitID <- factor(metadata$VisitID, levels = c(0, 1, 3, 28))
+colors <- c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+)
+bp_col <- colors[as.numeric(metadata$VisitID)]
+
+boxplot(log2(dplyr::select(raw_genes_no0_cpm2p, -starts_with("Genes"))),
+        col = as.character(bp_col),
+        xlab = "Samples", ylab = "log2(raw counts)", axes = FALSE)
+axis(2)
+box()
+legend("topright", title = "Day", legend = levels(metadata$VisitID), 
+       col = c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
+# Gene Counts Plot: TMM-Normalized Log2CPM
+boxplot(raw_count_DGE_normfact_TMMlog2cpm, xlab = "Samples", col = as.character(bp_col),
+        ylab = "Normalized log2 cpm", axes = FALSE)
+axis(2)
+box()
+legend("topright", title = "Day", legend = levels(metadata$VisitID), 
+       col = c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
+# Day-Arranged Library Size Plot
+lib_size_plot <- metadata %>% 
+  mutate (libsize = colSums(dplyr::select(raw_genes_no0_cpm2p, -starts_with("Genes")))) %>%
+  group_by (VisitID) %>% 
+  arrange (VisitID)
+
+barplot(lib_size_plot$libsize, col=rep(c("#800080","#00008B","#FF69B4","#00CED1"),each=18))
+legend("topright", title = "Day", legend = levels(metadata$VisitID), 
+       col = c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+       ), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
+# Participant-Arranged Libsize Plot
+barplot(colSums(dplyr::select(raw_genes_no0_cpm2p, -starts_with("Genes"))),
+        col = as.character(bp_col), xlab = "Samples", ylab = "Library size", names.arg = "")
+axis(2)
+box()
+legend("topright", title = "Day", legend = levels(metadata$VisitID), 
+       col = c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+```
+
+#### Dendrogram
+
+```{r}
+# Build Dendrograms
+deucl_raw <- dist(t(dplyr::select(raw_genes_no0_cpm2p, -starts_with("Genes")))) # raw gene counts
+deucl_norm <- dist(t(raw_count_DGE_normfact_TMMlog2cpm)) # TMM-normalized log2cpm gene counts
+
+dend_raw <- as.dendrogram(hclust(deucl_raw, method = "ward")) # using euclidian distance
+dend_norm <- as.dendrogram(hclust(deucl_norm, method = "ward")) # and ward method
+
+# Prepare Dendrogram Plots
+assign_color <- function(label) { # creating function to color dendrogram by day
+  if (grepl("D0", label)) {
+    return("#800080")  
+  } else if (grepl("D1", label)) {
+    return("#00008B") 
+  } else if (grepl("D3", label)) {
+    return("#FF69B4") 
+  } else if (grepl("D28", label)) {
+    return("#00CED1") 
+  } else {
+    return("#000000") 
+  }
+}
+
+label_colors_raw <- sapply(labels(dend_raw), assign_color) # apply function to dendrograms
+label_colors_norm <- sapply(labels(dend_norm), assign_color)
+labels_colors(dend_raw) <- label_colors_raw
+labels_colors(dend_norm) <- label_colors_norm
+
+# Plot Dengrogram: Raw Gene Counts
+plot(dend_raw)
+legend("topright", title = "Day", legend = levels(metadata$VisitID), 
+       col = c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+
+# Plot Dendrogram: TMM_Normalized Log2CPM Genes
+plot(dend_norm)
+legend("topright", title = "Day", legend = levels(metadata$VisitID), 
+       col = c(colors <- c("#800080", "#00008B", "#FF69B4", "#00CED1")
+), 
+       pch = 15, horiz = FALSE, bg = "white", cex = 0.8)
+```
+
+### Principal Components Analysis
+
+```{r}
+
+```
+
+### Differential Expression Analysis
+
+```{r}
+
+```
+
+## (Sparse) Partial Least Squares Regression: Day 1 Gene Expression
+
+```{r Preparing Data for (s)PLS}
+gene_expression_D1 <- normfact_TMM_log2cpm_counts[ , seq(2, ncol(normfact_TMM_log2cpm_counts), by = 4)] # select D1 gene expression from TMM-normalized log2cpm gene counts
+
+antibodies_D0 <- as.data.frame(DM_YF_Antibodies_D0D28) %>% # select antibody levels on D0
+  filter (day_abs == "J0") %>% # to compute logfold change further down
+  dplyr::select (PRNT50, logPRNT50)
+
+antibodies_D28 <- as.data.frame(DM_YF_Antibodies_D0D28) %>% # select antibody levels on D28
+  filter (day_abs == "J28") %>%
+  dplyr::select (PRNT50, logPRNT50)
+  
+new_row_names <- character(0) # rename columns as 'participant'.'day' for easier reading
+for (p in 1:18) {
+  for (d in c(28)) {
+    new_row_names <- c(new_row_names, paste0("P", p, ".D", d))
+  }
+}
+rownames(antibodies_D0) <- new_row_names
+rownames(antibodies_D28) <- new_row_names
+
+spls_df <- as.data.frame(t(gene_expression_D1)) # preparing dataframe to use for PLS and sPLS
+spls_df$D28_logPRNT50 <- antibodies_D28$logPRNT50
+```
+
+```{r PLS Models}
+# Using logPRNT50 on D28 adjusting for D0
+plsr_model_log_D1D0 <- plsr(D28_logPRNT50~.+antibodies_D0$logPRNT50, data=spls_df, scale=TRUE, validation="CV") 
+summary(plsr_model_log_D1D0) # using k-fold cross-validation
+
+plsr_model_log2_D1D0 <- plsr(D28_logPRNT50~.+antibodies_D0$logPRNT50, data=spls_df, scale=TRUE, validation="LOO") 
+summary(plsr_model_log2_D1D0) # using leave-one-out cross-validation
+
+validationplot(plsr_model_log_D1D0, main = "Cross-Validation: PLS for D1 Gene Expression and D28 logPRNT50 Adjusting for D0", xlab = "root mean-squared error (RMSE)")
+validationplot(plsr_model_log_D1D0, val.type="MSEP", main = "Cross-Validation: PLS for D1 Gene Expression and D28 logPRNT50 Adjusting for D0", xlab = "mean-squared error of prediciton (MSEP)") # plot for mean squared error of prediction
+validationplot(plsr_model_log_D1D0, val.type="R2", main = "Cross-Validation: PLS for D1 Gene Expression and D28 logPRNT50 Adjusting for D0") # plot for R2
+```
+
+```{r sPLS Models}
+# Using logPRNT50 on D28 adjusting for D0
+X <- spls_df %>% dplyr::select(-D28_logPRNT50) # explanatory matrix as gene expression on day 1
+lm_results <- lm(antibodies_D28$logPRNT50~antibodies_D0$logPRNT50) # taking residuals of D28 antibodies regressed on D0 antibodies
+res <- lm_results$residuals
+Y1 <- as.vector(res) # outcome vector Ylog as logRPNT50 on D28
+r <- 10
+
+spls_log_D1D0 <- spls(X, Y1, ncomp = r, keepX = rep(5, r)) # fit sPLS model for logPRNT50
+
+spls_log_D1D0 <- spls(X, Y1, ncomp = r, keepX = rep(5, r))
+
+spls_log_D1D0_tune1 <- tune.spls(X, Y1, ncomp = 5, test.keepX = c(1:25), 
+                              validation="Mfold", folds=10, nrepeat=20, 
+                              measure = "R2", 
+                              cpus=parallel::detectCores()-2)
+spls_log_D1D0_tune1
+plot(spls_log_D1D0_tune1)
+spls_log_D1D0_tune1$choice.keepX
+
+spls_log_D1D0_opt <- spls(X, Y1, 
+                          ncomp = ncomp_opt, 
+                          keepX = spls_log_D1D0_tune1$choice.keepX[1:ncomp_opt])
+```
+
+```{r sPLS Plots}
+# Prepare plots
+multiplot <- function(..., plotlist=NULL, cols) { # using this function from Winston Chang's R cookbook to put plots side by side
+  require(grid)
+  
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  
+  numPlots = length(plots)
+  
+  # Make the panel
+  plotCols = cols                          # Number of columns of plots
+  plotRows = ceiling(numPlots/plotCols) # Number of rows needed, calculated from # of cols
+  
+  # Set up the page
+  grid.newpage()
+  pushViewport(viewport(layout = grid.layout(plotRows, plotCols)))
+  vplayout <- function(x, y)
+    viewport(layout.pos.row = x, layout.pos.col = y)
+  
+  # Make each plot, in the correct location
+  for (i in 1:numPlots) {
+    curRow = ceiling(i/plotCols)
+    curCol = (i-1) %% plotCols + 1
+    print(plots[[i]], vp = vplayout(curRow, curCol ))
+  }
+  
+}
+
+# Plot Results for sPLS: D1 Adjusting for D0
+colfunc <- colorRampPalette(c("#ADD8E6", "#000080"))(7)
+
+plotlog11 <- plotIndiv(spls_log_D1D0_opt, 
+          rep.space = "X-variate", 
+          title = 'sPLS on X-variate (D1)', legend = TRUE, col = colfunc, pch = 16, legend.title = 
+          "logPRNT50 values")
+plotlog12 <- plotIndiv(spls_log_D1D0_opt, 
+          rep.space = "Y-variate", 
+          title = 'sPLS on Y-variate (D1)', legend = TRUE, col = colfunc, pch = 16, legend.title = 
+          "logPRNT50 values")
+multiplot(plotlog11, plotlog12, cols=2)
+
+plotIndiv(spls_log_D1D0_opt, 
+          rep.space = "XY-variate",  
+          title = 'sPLS on LogPRNT50 at Day 28 (Adjusting for D0) and Gene Expression at Day 1 on XY-Variate Space',
+          legend = TRUE, col = colfunc, pch = 16, legend.title = 
+          "logPRNT50 values")
+
+plotVar(spls_log_D1D0_opt, comp=1:2, title = "Correlation Circle Plot: LogPRNT50 on Day 28 (Adjusting for D0) and Gene Expression at Day 1")
+```
+
+```{r CIM Heatmaps}
+# D1 Adjusting for D0
+legend1=list(legend = c(min(Y1), max(Y1)), # min and max Ylogchange
+            col = c("#ADD8E6", "#000080"), # set of colors
+            title = "D1 Gene expression and Day 28 LogPRNT50 (Adjusting for D0)", # legend title
+            cex = 0.7) # legend size
+
+cim(spls_log_D1D0_opt, title="D1 Gene expression and Day 28 LogPRNT50 (Adjusting for D0)",
+    margins = c(7, 5), legend = legend1)
+```
+
+## (Sparse) Partial Least Squares Regression: Day 3 Gene Expression
+
+```{r Preparing Data for (s)PLS}
+gene_expression_D3 <- normfact_TMM_log2cpm_counts[ , seq(3, ncol(normfact_TMM_log2cpm_counts), by = 4)] # select D3 gene expression from TMM-normalized log2cpm gene counts
+
+spls_df_D3 <- as.data.frame(t(gene_expression_D3)) # preparing dataframe to use for PLS and sPLS
+spls_df_D3$D28_logPRNT50 <- antibodies_D28$logPRNT50
+```
+
+```{r PLS Models}
+# Using logPRNT50 on D28 adjusting for D0
+plsr_model_log_D3D0 <- plsr(D28_logPRNT50~.+antibodies_D0$logPRNT50, data=spls_df_D3, scale=TRUE, validation="CV") 
+summary(plsr_model_log_D3D0) # using k-fold cross-validation
+
+plsr_model_log2_D3D0 <- plsr(D28_logPRNT50~.+antibodies_D0$logPRNT50, data=spls_df_D3, scale=TRUE, validation="LOO") 
+summary(plsr_model_log2_D3D0) # using leave-one-out cross-validation
+
+validationplot(plsr_model_log_D3D0, main = "Cross-Validation: PLS for D3 Gene Expression and D28 logPRNT50 Adjusting for D0", xlab = "root mean-squared error (RMSE)")
+validationplot(plsr_model_log_D1D0, val.type="MSEP", main = "Cross-Validation: PLS for D3 Gene Expression and D28 logPRNT50 Adjusting for D0", xlab = "mean-squared error of prediciton (MSEP)") # plot for mean squared error of prediction
+validationplot(plsr_model_log_D1D0, val.type="R2", main = "Cross-Validation: PLS for D3 Gene Expression and D28 logPRNT50 Adjusting for D0") # plot for R2
+```
+
+```{r sPLS Models}
+# Using logPRNT50 on D28 adjusting for D0
+X <- spls_df_D3 %>% dplyr::select(-D28_logPRNT50) # explanatory matrix as gene expression on day 1
+lm_results <- lm(antibodies_D28$logPRNT50~antibodies_D0$logPRNT50) # taking residuals of D28 antibodies regressed on D0 antibodies
+res <- lm_results$residuals
+Y2 <- as.vector(res) # outcome vector Ylog as logRPNT50 on D28
+r <- 10
+
+spls_log_D3D0 <- spls(X, Y2, ncomp = r, keepX = rep(5, r)) # fit sPLS model for logPRNT50
+
+spls_log_D3D0 <- spls(X, Y2, ncomp = r, keepX = rep(5, r))
+
+spls_log_D3D0_tune1 <- tune.spls(X, Y2, ncomp = 5, test.keepX = c(1:25), 
+                              validation="Mfold", folds=10, nrepeat=20, 
+                              measure = "R2", 
+                              cpus=parallel::detectCores()-2)
+spls_log_D3D0_tune1
+plot(spls_log_D3D0_tune1)
+spls_log_D3D0_tune1$choice.keepX
+
+spls_log_D3D0_opt <- spls(X, Y2, 
+                          ncomp = ncomp_opt, 
+                          keepX = spls_log_D3D0_tune1$choice.keepX[1:ncomp_opt])
+```
+
+```{r sPLS Plots}
+# Plot Results for sPLS: D3 Adjusting for D0
+colfunc <- colorRampPalette(c("#ADD8E6", "#000080"))(7)
+
+plotlog21 <- plotIndiv(spls_log_D3D0_opt, 
+          rep.space = "X-variate", 
+          title = 'sPLS on X-variate (D3)', legend = TRUE, col = colfunc, pch = 16, legend.title = 
+          "logPRNT50 values")
+plotlog22 <- plotIndiv(spls_log_D3D0_opt, 
+          rep.space = "Y-variate", 
+          title = 'sPLS on Y-variate (D3)', legend = TRUE, col = colfunc, pch = 16, legend.title = 
+          "logPRNT50 values")
+multiplot(plotlog21, plotlog22, cols=2)
+
+plotIndiv(spls_log_D3D0_opt, 
+          rep.space = "XY-variate",  
+          title = 'sPLS on LogPRNT50 at Day 28 (Adjusting for D0) and Gene Expression at Day 3 on XY-Variate Space',
+          legend = TRUE, col = colfunc, pch = 16, legend.title = 
+          "logPRNT50 values")
+
+plotVar(spls_log_D3D0_opt, comp=1:2, title = "Correlation Circle Plot: LogPRNT50 on Day 28 (Adjusting for D0) and Gene Expression at Day 3")
+```
+
+```{r CIM Heatmaps}
+# D3 Adjusting for D0
+legend2=list(legend = c(min(Y2), max(Y2)), # min and max Y
+            col = c("#ADD8E6", "#000080"), # set of colors
+            title = "D3 Gene expression and Day 28 LogPRNT50 (Adjusting for D0)", # legend title
+            cex = 0.7) # legend size
+
+cim(spls_log_D3D0_opt, title="D3 Gene expression and Day 28 LogPRNT50 (Adjusting for D0)",
+    margins = c(7, 5), legend = legend2)
+```
