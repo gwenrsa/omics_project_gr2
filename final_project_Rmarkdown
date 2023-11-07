@@ -19,6 +19,30 @@ Dr. Laura Richter, Dr. Boris Hejblum, and Dr. Fleur Mougin
 
 Note: for the plots, please use dev.off() prior to plotting if there are issues. Additionally, for the CIM heatmap plots in the sPLS section, please ensure the plotting window is large enough. 
 
+
+
+
+### Sample Description
+
+#### Loading Data and Packages
+
+```{r}
+# Loading Required Packages
+library(dplyr) # for pipeline functions
+library(edgeR) # for gene normalization
+library(limma) # for differential expression analysis
+library(UpSetR) # for differential expression analysis
+library(flashClust) # for dendrogram plots
+library(dendextend) # for dendrogram plots
+library(readxl) # to read data
+library(mixOmics) # for partial least squares regression
+library(pls) # for partial least squares regression
+
+# Reading Data
+setwd("~/Desktop/OMICS project/omics_project_gr2") # set working directory
+raw_genes <- read.csv("DM_raw-counts_transposed.csv")
+```
+
 ### Preparing Antibody and metadata
 ```{r}
 antibodyValues <- read_excel("YF_Antibodies_D0D28 Results.xlsx") %>% 
@@ -42,28 +66,6 @@ metadata$VisitID <- as.numeric(metadata$VisitID)
 metadata$VisitID[metadata$VisitID>28] = 28 
 metadata$VisitID[metadata$VisitID==4] = 3
 metadata <- left_join(metadata, antibodyState, by = join_by("ParticipantID"))
-```
-
-
-### Sample Description
-
-#### Loading Data and Packages
-
-```{r}
-# Loading Required Packages
-library(dplyr) # for pipeline functions
-library(edgeR) # for gene normalization
-library(limma) # for differential expression analysis
-library(UpSetR) # for differential expression analysis
-library(flashClust) # for dendrogram plots
-library(dendextend) # for dendrogram plots
-library(readxl) # to read data
-library(mixOmics) # for partial least squares regression
-library(pls) # for partial least squares regression
-
-# Reading Data
-setwd("~/Desktop/OMICS project/omics_project_gr2") # set working directory
-raw_genes <- read.csv("DM_raw-counts_transposed.csv")
 ```
 
 #### Formatting Data
@@ -100,11 +102,18 @@ dim(raw_genes_no0_cpm2p)
 
 # Compute TMM Normalization
 raw_count_DGE <- DGEList(counts = dplyr::select(raw_genes_no0_cpm2p, -starts_with("Genes")),
-                        genes = dplyr::select(raw_genes_no0_cpm2p,
-                                                                  starts_with("Genes")))
+                        genes = dplyr::select(raw_genes_no0_cpm2p, starts_with("Genes")), samples = metadata)
+library(matrixStats)
+gene_variances <- rowVars(raw_count_DGE$counts)
+genes_non0Var_ind <- which(gene_variances != 0)
+raw_count_DGE <- raw_count_DGE[genes_non0Var_ind, ]
+raw_count_DGE_normfact <- edgeR::calcNormFactors(raw_count_DGE, method = "TMM")
+
 raw_count_DGE_normfact <- edgeR::calcNormFactors(raw_count_DGE, method = "TMM")
 
 raw_count_DGE_normfact_TMMlog2cpm <- edgeR::cpm(raw_count_DGE_normfact, log = TRUE)
+
+
 
 # Merge DGE back with Gene Name Column
 normfact_TMM_log2cpm_counts <- as.data.frame(raw_count_DGE_normfact_TMMlog2cpm)
@@ -219,9 +228,11 @@ legend("topright", title = "Day", legend = levels(metadata$VisitID),
 ### Differential Expression Analysis
 Day 1
 ```{r}
-raw_count_DGE_normfact_TMMlog2cpm_dearseq <- raw_count_DGE_normfact_TMMlog2cpm
-colnames(raw_count_DGE_normfact_TMMlog2cpm_dearseq) <- metadata$SampleID
-genesDay1_normfact <- raw_count_DGE_normfact_TMMlog2cpm_dearseq[,metadata$VisitID ==1]
+genes_normfact <- edgeR::calcNormFactors(raw_count_DGE, method = "TMM")
+genes_normfact$counts <- edgeR::cpm(genes_normfact$counts, log = TRUE)
+colnames(genes_normfact$counts) <- metadata$SampleID
+rownames(genes_normfact$samples) <- metadata$SampleID
+genesDay1_normfact <- genes_normfact[,metadata$VisitID ==1]
 design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay1_normfact$samples))
 samplesDay1 <- metadata %>% 
   filter(VisitID == 1)
@@ -232,16 +243,13 @@ design_day1 <- design_day1 %>%
 res_dearseq_1 <- dearseq::dear_seq(exprmat=genesDay1_normfact$counts, variables2test = design_day1[,"LogPRNT50_Day28", drop = F], covariates = design_day1[,c("(Intercept)", "LogPRNT50_Day0"), drop = F], which_test = "permutation", preprocessed = T)
 summary(res_dearseq_1)
 plot(res_dearseq_1)
-dearseq_signif <- res_dearseq$pvals$adjPval<0.05
-geneList_1<- genesDay1_3_normfact$genes$Genes[as.logical(dearseq_signif)]
-
 ```
 
 Day 3
 ```{r}
-genesDay3_normfact <- raw_count_DGE_normfact_TMMlog2cpm_dearseq[,metadata$VisitID==3]
+genesDay3_normfact <- genes_normfact[,metadata$VisitID ==3]
 design <- as.data.frame(model.matrix(~LogPRNT50_Day28 + LogPRNT50_Day0, data=genesDay3_normfact$samples))
-samplesDay1 <- metadata %>% 
+samplesDay3 <- metadata %>% 
   filter(VisitID == 3)
 samplesDay3 <- samplesDay3$SampleID
 design_day3 <- design %>% filter(row.names(design) %in% samplesDay3)
