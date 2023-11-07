@@ -103,10 +103,6 @@ dim(raw_genes_no0_cpm2p)
 # Compute TMM Normalization
 raw_count_DGE <- DGEList(counts = dplyr::select(raw_genes_no0_cpm2p, -starts_with("Genes")),
                         genes = dplyr::select(raw_genes_no0_cpm2p, starts_with("Genes")), samples = metadata)
-library(matrixStats)
-gene_variances <- rowVars(raw_count_DGE$counts)
-genes_non0Var_ind <- which(gene_variances != 0)
-raw_count_DGE <- raw_count_DGE[genes_non0Var_ind, ]
 raw_count_DGE_normfact <- edgeR::calcNormFactors(raw_count_DGE, method = "TMM")
 
 raw_count_DGE_normfact <- edgeR::calcNormFactors(raw_count_DGE, method = "TMM")
